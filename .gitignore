@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local secrets and runtime output
+.env.*
+!.env.example
+traces/
+audit/
+reports/*.jsonl
+reports/*.log

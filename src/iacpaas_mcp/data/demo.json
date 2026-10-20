@@ -1,0 +1,21 @@
+{
+  "format": "normalized-demo-v1",
+  "mock": true,
+  "path": "/demo/university",
+  "name": "Университет — синтетический mock",
+  "nodes": [
+    {"id":"root","name":"Университет","metatype":"organization","value":null,"comment":"Синтетический пример"},
+    {"id":"faculty","name":"Факультет","metatype":"department","value":null,"comment":""},
+    {"id":"course","name":"Курс ИИ","metatype":"course","value":"AI","comment":""},
+    {"id":"student","name":"Студент","metatype":"person","value":null,"comment":""},
+    {"id":"isolated","name":"Архив","metatype":"archive","value":null,"comment":"Недостижим от root"}
+  ],
+  "edges": [
+    {"source":"root","target":"faculty","relation":"contains"},
+    {"source":"root","target":"faculty","relation":"contains"},
+    {"source":"faculty","target":"course","relation":"teaches"},
+    {"source":"course","target":"root","relation":"belongs_to"},
+    {"source":"course","target":"student","relation":"enrolls"},
+    {"source":"student","target":"external:library","relation":"uses"}
+  ]
+}
