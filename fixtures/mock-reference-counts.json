@@ -1,0 +1,14 @@
+{
+  "mock": true,
+  "source": "src/iacpaas_mcp/data/demo.json",
+  "path": "/demo/university",
+  "whole_resource": {"vertices": 5, "edges": 6, "external_edge_count": 1},
+  "reachable_from_root": {"vertices": 4, "edges": 6, "external_edge_count": 1},
+  "subgraphs": [
+    {"depth": 0, "vertices": 1, "edges": 0},
+    {"depth": 1, "vertices": 2, "edges": 2},
+    {"depth": 2, "vertices": 3, "edges": 4},
+    {"depth": 3, "vertices": 4, "edges": 6},
+    {"depth": 5, "vertices": 4, "edges": 6}
+  ]
+}
