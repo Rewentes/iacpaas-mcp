@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "iacpaas": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--frozen", "iacpaas-mcp"],
+      "cwd": "${workspaceFolder}",
+      "env": {"IACPAAS_ALLOW_WRITES": "0"}
+    }
+  }
+}
