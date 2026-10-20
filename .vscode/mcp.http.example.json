@@ -1,0 +1,12 @@
+{
+  "inputs": [
+    {"type": "promptString", "id": "iacpaas-http-token", "description": "MCP_HTTP_TOKEN локального сервера", "password": true}
+  ],
+  "servers": {
+    "iacpaas": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp",
+      "headers": {"Authorization": "Bearer ${input:iacpaas-http-token}"}
+    }
+  }
+}
