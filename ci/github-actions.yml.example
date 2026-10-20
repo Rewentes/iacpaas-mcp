@@ -1,0 +1,23 @@
+# Optional GitHub Actions workflow. Rename to .github/workflows/test.yml
+# after granting GitHub CLI permission to push workflow files.
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.3'
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --frozen
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen pytest -q

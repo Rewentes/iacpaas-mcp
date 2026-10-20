@@ -1,0 +1,665 @@
+{
+  "sdk": "mcp==1.30.0",
+  "source": "actual MCP tools/list on synthetic mock backend",
+  "tools": [
+    {
+      "name": "list_inforesources",
+      "description": "List the limited configured mock catalog.",
+      "inputSchema": {
+        "properties": {
+          "filter": {
+            "default": "",
+            "maxLength": 4096,
+            "title": "Filter",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "list_inforesourcesArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "get_inforesource",
+      "description": "Read metadata of a mock resource.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "get_inforesourceArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "get_subgraph",
+      "description": "Bounded local mock BFS; external targets are not fetched.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "root": {
+            "default": "root",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Root",
+            "type": "string"
+          },
+          "depth": {
+            "default": 2,
+            "maximum": 5,
+            "minimum": 0,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "max_nodes": {
+            "default": 2000,
+            "maximum": 2000,
+            "minimum": 1,
+            "title": "Max Nodes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "get_subgraphArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "count_graph",
+      "description": "Count mock node and edge instances within the requested scope.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Root"
+          },
+          "depth": {
+            "anyOf": [
+              {
+                "maximum": 5,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Depth"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "count_graphArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "query_graph",
+      "description": "Search a mock graph by an allowed domain field.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "field": {
+            "default": "name",
+            "maxLength": 4096,
+            "title": "Field",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "maxLength": 4096,
+            "title": "Value",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "query_graphArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "export_inforesource",
+      "description": "Export normalized-demo-v1, not a native IACPaaS format.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "export_inforesourceArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "validate_resource",
+      "description": "Validate normalized demo data without mutating any resource.",
+      "inputSchema": {
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "validate_resourceArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "update_concept",
+      "description": "Volatile mock mutation. Requires operator startup policy AND agent human confirmation.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "concept_id": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Concept Id",
+            "type": "string"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mark"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Comment"
+          }
+        },
+        "required": [
+          "path",
+          "concept_id"
+        ],
+        "title": "update_conceptArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "import_inforesource",
+      "description": "Import only normalized demo JSON into volatile mock; startup policy required.",
+      "inputSchema": {
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "clear_if_exists": {
+            "default": false,
+            "title": "Clear If Exists",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "import_inforesourceArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "backend": {
+            "const": "mock",
+            "default": "mock",
+            "title": "Backend",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "complete"
+        ],
+        "title": "ToolResponse",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}
