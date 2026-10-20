@@ -1,0 +1,70 @@
+{
+  "source": "actual CLI over a pseudo-terminal; test harness typed yes, not a human approval record",
+  "trace": [
+    {
+      "name": "list_inforesources",
+      "args": {
+        "filter": ""
+      },
+      "result": {
+        "ok": true,
+        "data": {
+          "resources": [
+            {
+              "path": "/demo/university",
+              "name": "Университет — синтетический mock"
+            }
+          ],
+          "complete": false,
+          "scope": "configured_mock_catalog",
+          "mock": true,
+          "warnings": [
+            "Каталог ограничен настроенными mock-ресурсами."
+          ]
+        },
+        "backend": "mock",
+        "complete": false,
+        "warnings": [
+          "Каталог ограничен настроенными mock-ресурсами."
+        ]
+      },
+      "status": "ok",
+      "duration_ms": 7.879
+    },
+    {
+      "name": "update_concept",
+      "args": {
+        "path": "/demo/university",
+        "concept_id": "root",
+        "comment": "Демонстрационная запись mock"
+      },
+      "result": {
+        "ok": true,
+        "data": {
+          "path": "/demo/university",
+          "concept": {
+            "id": "root",
+            "name": "Университет",
+            "metatype": "organization",
+            "value": null,
+            "comment": "Демонстрационная запись mock"
+          },
+          "mock": true,
+          "complete": true,
+          "scope": "volatile_mock_write",
+          "warnings": [
+            "Изменение только в памяти mock-процесса."
+          ]
+        },
+        "backend": "mock",
+        "complete": true,
+        "warnings": [
+          "Изменение только в памяти mock-процесса.",
+          "volatile mock write: in-memory only; no native API called"
+        ]
+      },
+      "status": "ok",
+      "duration_ms": 8.375
+    }
+  ]
+}
