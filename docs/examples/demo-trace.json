@@ -1,0 +1,236 @@
+{
+  "source": "actual mock MCP CLI executions",
+  "runs": {
+    "demo": [
+      {
+        "name": "list_inforesources",
+        "args": {
+          "filter": ""
+        },
+        "result": {
+          "ok": true,
+          "data": {
+            "resources": [
+              {
+                "path": "/demo/university",
+                "name": "Университет — синтетический mock"
+              }
+            ],
+            "complete": false,
+            "scope": "configured_mock_catalog",
+            "mock": true,
+            "warnings": [
+              "Каталог ограничен настроенными mock-ресурсами."
+            ]
+          },
+          "backend": "mock",
+          "complete": false,
+          "warnings": [
+            "Каталог ограничен настроенными mock-ресурсами."
+          ]
+        },
+        "status": "ok",
+        "duration_ms": 8.204
+      },
+      {
+        "name": "get_inforesource",
+        "args": {
+          "path": "/demo/university"
+        },
+        "result": {
+          "ok": true,
+          "data": {
+            "path": "/demo/university",
+            "name": "Университет — синтетический mock",
+            "format": "normalized-demo-v1",
+            "mock": true,
+            "node_count": 5,
+            "edge_count": 6,
+            "complete": true,
+            "scope": "local_resource",
+            "warnings": []
+          },
+          "backend": "mock",
+          "complete": true,
+          "warnings": []
+        },
+        "status": "ok",
+        "duration_ms": 7.247
+      }
+    ],
+    "count": [
+      {
+        "name": "list_inforesources",
+        "args": {
+          "filter": ""
+        },
+        "result": {
+          "ok": true,
+          "data": {
+            "resources": [
+              {
+                "path": "/demo/university",
+                "name": "Университет — синтетический mock"
+              }
+            ],
+            "complete": false,
+            "scope": "configured_mock_catalog",
+            "mock": true,
+            "warnings": [
+              "Каталог ограничен настроенными mock-ресурсами."
+            ]
+          },
+          "backend": "mock",
+          "complete": false,
+          "warnings": [
+            "Каталог ограничен настроенными mock-ресурсами."
+          ]
+        },
+        "status": "ok",
+        "duration_ms": 10.01
+      },
+      {
+        "name": "count_graph",
+        "args": {
+          "path": "/demo/university"
+        },
+        "result": {
+          "ok": true,
+          "data": {
+            "path": "/demo/university",
+            "vertices": 5,
+            "edges": 6,
+            "node_count": 5,
+            "edge_count": 6,
+            "external_edge_count": 1,
+            "complete": true,
+            "scope": "local_resource",
+            "warnings": [],
+            "mock": true
+          },
+          "backend": "mock",
+          "complete": true,
+          "warnings": []
+        },
+        "status": "ok",
+        "duration_ms": 7.407
+      }
+    ],
+    "recovery": [
+      {
+        "name": "list_inforesources",
+        "args": {
+          "filter": ""
+        },
+        "result": {
+          "ok": true,
+          "data": {
+            "resources": [
+              {
+                "path": "/demo/university",
+                "name": "Университет — синтетический mock"
+              }
+            ],
+            "complete": false,
+            "scope": "configured_mock_catalog",
+            "mock": true,
+            "warnings": [
+              "Каталог ограничен настроенными mock-ресурсами."
+            ]
+          },
+          "backend": "mock",
+          "complete": false,
+          "warnings": [
+            "Каталог ограничен настроенными mock-ресурсами."
+          ]
+        },
+        "status": "ok",
+        "duration_ms": 7.761
+      },
+      {
+        "name": "get_inforesource",
+        "args": {
+          "path": "/missing/resource"
+        },
+        "result": {
+          "code": "not_found",
+          "message": "Ресурс не найден: /missing/resource",
+          "retryable": false
+        },
+        "status": "error",
+        "duration_ms": 1.704
+      },
+      {
+        "name": "get_inforesource",
+        "args": {
+          "path": "/demo/university"
+        },
+        "result": {
+          "ok": true,
+          "data": {
+            "path": "/demo/university",
+            "name": "Университет — синтетический mock",
+            "format": "normalized-demo-v1",
+            "mock": true,
+            "node_count": 5,
+            "edge_count": 6,
+            "complete": true,
+            "scope": "local_resource",
+            "warnings": []
+          },
+          "backend": "mock",
+          "complete": true,
+          "warnings": []
+        },
+        "status": "ok",
+        "duration_ms": 7.203
+      }
+    ],
+    "denied": [
+      {
+        "name": "list_inforesources",
+        "args": {
+          "filter": ""
+        },
+        "result": {
+          "ok": true,
+          "data": {
+            "resources": [
+              {
+                "path": "/demo/university",
+                "name": "Университет — синтетический mock"
+              }
+            ],
+            "complete": false,
+            "scope": "configured_mock_catalog",
+            "mock": true,
+            "warnings": [
+              "Каталог ограничен настроенными mock-ресурсами."
+            ]
+          },
+          "backend": "mock",
+          "complete": false,
+          "warnings": [
+            "Каталог ограничен настроенными mock-ресурсами."
+          ]
+        },
+        "status": "ok",
+        "duration_ms": 8.028
+      },
+      {
+        "name": "update_concept",
+        "args": {
+          "path": "/demo/university",
+          "concept_id": "root",
+          "comment": "Демонстрационная запись mock"
+        },
+        "result": {
+          "code": "permission_denied",
+          "message": "Human CLI confirmation required; write denied"
+        },
+        "status": "denied",
+        "duration_ms": 0.021
+      }
+    ]
+  }
+}

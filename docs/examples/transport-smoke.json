@@ -1,0 +1,79 @@
+{
+  "stdio": {
+    "tools": [
+      "count_graph",
+      "export_inforesource",
+      "get_inforesource",
+      "get_subgraph",
+      "import_inforesource",
+      "list_inforesources",
+      "query_graph",
+      "update_concept",
+      "validate_resource"
+    ],
+    "count": {
+      "ok": true,
+      "data": {
+        "path": "/demo/university",
+        "vertices": 5,
+        "edges": 6,
+        "node_count": 5,
+        "edge_count": 6,
+        "external_edge_count": 1,
+        "complete": true,
+        "scope": "local_resource",
+        "warnings": [],
+        "mock": true
+      },
+      "backend": "mock",
+      "complete": true,
+      "warnings": []
+    },
+    "not_found": {
+      "code": "not_found",
+      "message": "Ресурс не найден: /missing/resource",
+      "retryable": false
+    },
+    "direct_write_denied": true
+  },
+  "http_unauthenticated_status": 401,
+  "http": {
+    "tools": [
+      "count_graph",
+      "export_inforesource",
+      "get_inforesource",
+      "get_subgraph",
+      "import_inforesource",
+      "list_inforesources",
+      "query_graph",
+      "update_concept",
+      "validate_resource"
+    ],
+    "count": {
+      "ok": true,
+      "data": {
+        "path": "/demo/university",
+        "vertices": 5,
+        "edges": 6,
+        "node_count": 5,
+        "edge_count": 6,
+        "external_edge_count": 1,
+        "complete": true,
+        "scope": "local_resource",
+        "warnings": [],
+        "mock": true
+      },
+      "backend": "mock",
+      "complete": true,
+      "warnings": []
+    },
+    "not_found": {
+      "code": "not_found",
+      "message": "Ресурс не найден: /missing/resource",
+      "retryable": false
+    },
+    "direct_write_denied": true
+  },
+  "stdio_http_equal": true,
+  "http_agent_output": "Model: DETERMINISTIC SCENARIO PARSER (NOT LLM)\nMOCK backend (synthetic fixtures, volatile writes). {\"ok\": true, \"data\": {\"path\": \"/demo/university\", \"vertices\": 5, \"edges\": 6, \"node_count\": 5, \"edge_count\": 6, \"external_edge_count\": 1, \"complete\": true, \"scope\": \"local_resource\", \"warnings\": [], \"mock\": true}, \"backend\": \"mock\", \"complete\": true, \"warnings\": []}"
+}
