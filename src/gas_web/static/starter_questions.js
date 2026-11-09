@@ -11,9 +11,8 @@ export const STARTER_QUESTIONS = Object.freeze([
   {title:'Ограничения по примесям', question:'Какие нормативные ограничения по примесям указаны для аргона газообразного высшего сорта?'},
 ]);
 
-export function pickStarters(previous = [], random = Math.random) {
-  const excluded = new Set(previous.map(item => item.question));
-  const pool = STARTER_QUESTIONS.filter(item => !excluded.has(item.question));
+export function pickStarters(random = Math.random) {
+  const pool = [...STARTER_QUESTIONS];
   for (let index = pool.length - 1; index > 0; index--) {
     const swap = Math.floor(random() * (index + 1));
     [pool[index], pool[swap]] = [pool[swap], pool[index]];
