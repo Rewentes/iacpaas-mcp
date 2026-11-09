@@ -11,7 +11,7 @@ const api = new Api();
 const $ = id => document.getElementById(id);
 const state = {ready: false, busy: false, conversation: null, items: [], messages: [], before: null, attempts: new Map(), drafts: new Map(), editing: null, edits: new Map(), archive: false};
 let retryAction = null;
-let starters = [], starterConversation;
+let starterConversation;
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -51,7 +51,6 @@ function controls() {
   for (const button of document.querySelectorAll('[data-prompt]')) button.disabled = locked;
   $('older').disabled = locked;
   $('retry').disabled = state.busy;
-  $('starters-shuffle').disabled = locked;
   $('activity').dataset.busy = String(state.busy);
   $('composer').setAttribute('aria-busy', String(state.busy));
   for (const button of document.querySelectorAll('[data-message-action], .editor-actions button')) button.disabled = locked || archived || pending;
@@ -113,7 +112,10 @@ async function manageConversation(item, action) {
       }
     } else {
       item.archived = action === 'archive';
-      if (state.conversation?.id === item.id) state.conversation.archived = item.archived;
+      if (state.conversation?.id === item.id) {
+        state.conversation.archived = item.archived;
+        if (!state.messages.length) renderMessages();
+      }
       announce(action === 'archive' ? 'Диалог в архиве. Его можно восстановить.' : 'Диалог восстановлен.');
     }
     renderConversations();
@@ -303,7 +305,7 @@ function renderMessages(animate = false) {
   }));
   for (const node of $('messages').querySelectorAll('.message details')) if (expanded.has(`${node.closest('.message').dataset.messageId}:${node.className}`)) node.open = true;
   $('welcome').hidden = state.messages.length > 0;
-  $('starter-actions').hidden = state.messages.length > 0;
+  $('starter-actions').hidden = state.messages.length > 0 || !!state.conversation?.archived;
   if (!state.messages.length && starterConversation !== (state.conversation?.id || null)) renderStarters();
   chat.dataset.empty = String(state.messages.length === 0);
   if (wasEmpty !== (state.messages.length === 0) && !reducedMotion.matches) {
@@ -503,8 +505,7 @@ $('prompt').addEventListener('keydown', event => {
 });
 function renderStarters() {
   starterConversation = state.conversation?.id || null;
-  starters = pickStarters(starters);
-  $('starter-list').replaceChildren(...starters.map(item => {
+  $('starter-list').replaceChildren(...pickStarters().map(item => {
     const button = element('button'); button.type = 'button'; button.dataset.prompt = item.question;
     button.append(element('strong', item.title), element('span', item.question, 'suggestion-description'));
     button.addEventListener('click', () => {
@@ -515,7 +516,6 @@ function renderStarters() {
   }));
   controls();
 }
-$('starters-shuffle').addEventListener('click', renderStarters);
 $('new-chat').addEventListener('click', newConversation);
 $('older').addEventListener('click', loadOlder);
 $('retry').addEventListener('click', () => { if (!state.busy) retryAction?.(); });
