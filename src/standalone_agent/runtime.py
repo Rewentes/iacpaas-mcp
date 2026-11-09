@@ -102,20 +102,26 @@ def decode_result(result):
         return {"message": text}
 
 
-def redact(value):
+def redact(value, *, max_text=2048, max_list=50):
     if isinstance(value, dict):
         return {
-            str(k): "[REDACTED]" if SECRET.search(str(k)) else redact(v) for k, v in value.items()
+            str(k): "[REDACTED]"
+            if SECRET.search(str(k))
+            else redact(v, max_text=max_text, max_list=max_list)
+            for k, v in value.items()
         }
     if isinstance(value, list):
-        return [redact(v) for v in value[:50]]
+        return [
+            redact(v, max_text=max_text, max_list=max_list)
+            for v in (value if max_list is None else value[:max_list])
+        ]
     if isinstance(value, str):
         text = value
         for key, secret in os.environ.items():
             if SECRET.search(key) and len(secret) >= 4:
                 text = text.replace(secret, "[REDACTED]")
         text = re.sub(r"(?i)bearer\s+\S+|sk-[A-Za-z0-9_-]+", "[REDACTED]", text)
-        return text[:2048]
+        return text if max_text is None else text[:max_text]
     return value
 
 

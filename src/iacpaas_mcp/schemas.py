@@ -14,6 +14,6 @@ Text = Annotated[str, Field(max_length=4096)]
 class ToolResponse(BaseModel):
     ok: Literal[True] = True
     data: dict[str, Any]
-    backend: Literal["mock"] = "mock"
+    backend: Literal["mock", "iacpaas"] = "mock"
     complete: bool
     warnings: list[str] = Field(default_factory=list)

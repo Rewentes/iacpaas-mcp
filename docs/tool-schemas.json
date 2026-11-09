@@ -1,10 +1,10 @@
 {
   "sdk": "mcp==1.30.0",
-  "source": "actual MCP tools/list on synthetic mock backend",
+  "source": "actual MCP tools/list schema for mock backend; no resource fetch",
   "tools": [
     {
       "name": "list_inforesources",
-      "description": "List the limited configured mock catalog.",
+      "description": "List configured resources. This is not a complete platform-wide catalogue.",
       "inputSchema": {
         "properties": {
           "filter": {
@@ -38,8 +38,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -69,7 +72,7 @@
     },
     {
       "name": "get_inforesource",
-      "description": "Read metadata of a mock resource.",
+      "description": "Read resource metadata, root identifier and source of graph counts.",
       "inputSchema": {
         "properties": {
           "path": {
@@ -99,8 +102,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -130,7 +136,7 @@
     },
     {
       "name": "get_subgraph",
-      "description": "Bounded local mock BFS; external targets are not fetched.",
+      "description": "Bounded BFS of the exported graph; external originals are not fetched.",
       "inputSchema": {
         "properties": {
           "path": {
@@ -181,8 +187,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -212,7 +221,7 @@
     },
     {
       "name": "count_graph",
-      "description": "Count mock node and edge instances within the requested scope.",
+      "description": "Count exported vertices and edges within the requested scope.",
       "inputSchema": {
         "properties": {
           "path": {
@@ -270,8 +279,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -301,7 +313,7 @@
     },
     {
       "name": "query_graph",
-      "description": "Search a mock graph by an allowed domain field.",
+      "description": "Search exported vertices. auto matches id/metatype exactly, other fields by substring.\ntotal_matches counts this query, not all gas records. contains explicitly allows partial types.\n",
       "inputSchema": {
         "properties": {
           "path": {
@@ -328,6 +340,16 @@
             "minimum": 1,
             "title": "Limit",
             "type": "integer"
+          },
+          "match_mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "exact",
+              "contains"
+            ],
+            "title": "Match Mode",
+            "type": "string"
           }
         },
         "required": [
@@ -350,8 +372,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -381,7 +406,7 @@
     },
     {
       "name": "export_inforesource",
-      "description": "Export normalized-demo-v1, not a native IACPaaS format.",
+      "description": "Export the normalized graph, with source provenance; not native universal JSON.",
       "inputSchema": {
         "properties": {
           "path": {
@@ -411,8 +436,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -442,7 +470,7 @@
     },
     {
       "name": "validate_resource",
-      "description": "Validate normalized demo data without mutating any resource.",
+      "description": "Validate normalized graph structure without mutation or ontology validation.",
       "inputSchema": {
         "properties": {
           "payload": {
@@ -471,8 +499,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -565,8 +596,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },
@@ -631,8 +665,11 @@
             "type": "object"
           },
           "backend": {
-            "const": "mock",
             "default": "mock",
+            "enum": [
+              "mock",
+              "iacpaas"
+            ],
             "title": "Backend",
             "type": "string"
           },

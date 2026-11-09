@@ -17,6 +17,8 @@ class Backend(Protocol):
 class MockBackend:
     """Изолированная изменяемая копия fixture; никакой сети или fallback."""
 
+    kind = "mock"
+
     def __init__(self, fixture_path: str | Path | None = None):
         path = Path(fixture_path) if fixture_path else Path(__file__).parent / "data/demo.json"
         resource = json.loads(path.read_text(encoding="utf-8"))

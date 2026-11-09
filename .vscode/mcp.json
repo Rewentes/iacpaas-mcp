@@ -5,6 +5,7 @@
       "command": "uv",
       "args": ["run", "--frozen", "iacpaas-mcp"],
       "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "env": {"IACPAAS_ALLOW_WRITES": "0"}
     }
   }

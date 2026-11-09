@@ -1,10 +1,11 @@
-"""MCP transport over the explicit local mock backend."""
+"""One MCP contract over mock data or a configured read-only IACPaaS adapter."""
 
 import hmac
 import json
 import logging
 import os
 import threading
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -45,9 +46,20 @@ class PolicyMCP(FastMCP):
             elif isinstance(cause, TimeoutError):
                 code, message, retryable = "timeout", "Operation timed out", True
             else:
-                code, message, retryable = "platform_error", "Mock operation failed", False
+                code, message, retryable = "platform_error", "Operation failed", False
             error = ToolError(json.dumps(dict(code=code, message=message, retryable=retryable)))
             return CallToolResult(isError=True, content=[TextContent(type="text", text=str(error))])
+
+
+def create_service(backend=None):
+    backend = backend or os.environ.get("IACPAAS_BACKEND", "mock")
+    if backend == "mock":
+        return GraphService()
+    if backend == "iacpaas":
+        from .platform import IACPaaSBackend
+
+        return GraphService(IACPaaSBackend.from_env())
+    raise DomainError("unsupported_backend", "Неизвестный источник IACPaaS.")
 
 
 def create_server(
@@ -58,8 +70,9 @@ def create_server(
     max_result_bytes=1_048_576,
     max_argument_bytes=1_048_576,
 ):
-    service = service if service is not None else GraphService()
-    server = PolicyMCP("iacpaas-mock", host=host, port=port)
+    service = service if service is not None else create_service()
+    backend = getattr(getattr(service, "backend", None), "kind", "mock")
+    server = PolicyMCP("iacpaas", host=host, port=port)
     server.max_argument_bytes = max_argument_bytes
     read = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
     write = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False)
@@ -83,7 +96,10 @@ def create_server(
         with lock:
             data = getattr(service, name)(**kwargs)
         result = ToolResponse(
-            data=data, complete=data.get("complete", True), warnings=data.get("warnings", [])
+            data=data,
+            backend=backend,
+            complete=data.get("complete", True),
+            warnings=data.get("warnings", []),
         )
         if _write:
             result.warnings.append("volatile mock write: in-memory only; no native API called")
@@ -96,6 +112,10 @@ def create_server(
     def mutate(name, target_path, **kwargs):
         with lock:
             try:
+                if backend != "mock":
+                    raise DomainError(
+                        "permission_denied", "Изменение реальных ресурсов IACPaaS отключено."
+                    )
                 policy.authorize(target_path)
                 result = invoke(name, _write=True, **kwargs)
             except Exception:
@@ -106,44 +126,58 @@ def create_server(
 
     @server.tool(annotations=read)
     def list_inforesources(filter: Text = "", limit: Limit = 100) -> ToolResponse:
-        """List the limited configured mock catalog."""
+        """List configured resources. This is not a complete platform-wide catalogue."""
         return invoke("list_inforesources", filter=filter, limit=limit)
 
     @server.tool(annotations=read)
     def get_inforesource(path: Path) -> ToolResponse:
-        """Read metadata of a mock resource."""
+        """Read resource metadata, root identifier and source of graph counts."""
         return invoke("get_inforesource", path=path)
 
     @server.tool(annotations=read)
     def get_subgraph(
         path: Path, root: Path = "root", depth: Depth = 2, max_nodes: NodeLimit = 2000
     ) -> ToolResponse:
-        """Bounded local mock BFS; external targets are not fetched."""
+        """Bounded BFS of the exported graph; external originals are not fetched."""
         return invoke("get_subgraph", path=path, root=root, depth=depth, max_nodes=max_nodes)
 
     @server.tool(annotations=read)
     def count_graph(
         path: Path, root: Path | None = None, depth: Depth | None = None
     ) -> ToolResponse:
-        """Count mock node and edge instances within the requested scope."""
+        """Count exported vertices and edges within the requested scope."""
         return invoke("count_graph", path=path, root=root, depth=depth)
 
     @server.tool(annotations=read)
     def query_graph(
-        path: Path, field: Text = "name", value: Text = "", limit: Limit = 100
+        path: Path, field: Text = "name", value: Text = "", limit: Limit = 100,
+        match_mode: Literal["auto", "exact", "contains"] = "auto",
     ) -> ToolResponse:
-        """Search a mock graph by an allowed domain field."""
-        return invoke("query_graph", path=path, field=field, value=value, limit=limit)
+        """Search exported vertices. auto matches id/metatype exactly, other fields by substring.
+        total_matches counts this query, not all gas records. contains explicitly allows partial types.
+        """
+        return invoke("query_graph", path=path, field=field, value=value, limit=limit, match_mode=match_mode)
 
     @server.tool(annotations=read)
     def export_inforesource(path: Path) -> ToolResponse:
-        """Export normalized-demo-v1, not a native IACPaaS format."""
+        """Export the normalized graph, with source provenance; not native universal JSON."""
         return invoke("export_inforesource", path=path)
 
     @server.tool(annotations=read)
     def validate_resource(payload: dict) -> ToolResponse:
-        """Validate normalized demo data without mutating any resource."""
+        """Validate normalized graph structure without mutation or ontology validation."""
         return invoke("validate_resource", payload=payload)
+
+    if backend == "iacpaas":
+
+        @server.tool(annotations=read)
+        def get_gas_specification(path: Path, concept_id: Path) -> ToolResponse:
+            """Read normative component limits for a Газ vertex found by query_graph.
+
+            Includes exact ≤/≥, units, standard and numeric source identifiers.
+            These are standard limits, never measured impurity concentrations.
+            """
+            return invoke("get_gas_specification", path=path, concept_id=concept_id)
 
     @server.tool(annotations=write)
     def update_concept(
@@ -206,9 +240,7 @@ def main(argv=None):
     import argparse
     import sys
 
-    parser = argparse.ArgumentParser(
-        description="Local mock IACPaaS MCP stand (native API not connected)"
-    )
+    parser = argparse.ArgumentParser(description="IACPaaS MCP: mock or read-only native resources")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
@@ -216,13 +248,18 @@ def main(argv=None):
         "--backend", choices=["mock", "iacpaas"], default=os.environ.get("IACPAAS_BACKEND", "mock")
     )
     args = parser.parse_args(argv)
-    if args.backend != "mock":
-        parser.error(
-            "unsupported_backend: native IACPaaS API is not connected; use --backend mock explicitly"
-        )
-    server = create_server(host=args.host, port=args.port)
+    try:
+        service = create_service(args.backend)
+    except DomainError as exc:
+        parser.error(f"{exc.code}: {exc.message}")
+    server = create_server(service, host=args.host, port=args.port)
     if args.transport == "stdio":
-        print("MOCK backend: normalized-demo-v1; native IACPaaS API not connected", file=sys.stderr)
+        print(
+            "MOCK backend: synthetic normalized-demo-v1"
+            if args.backend == "mock"
+            else "IACPaaS backend: read-only native exports",
+            file=sys.stderr,
+        )
         server.run(transport="stdio")
     else:
         import uvicorn

@@ -13,17 +13,19 @@ dependencies = [
   "httpx==0.28.1",
   "uvicorn==0.54.0",
   "python-dotenv==1.2.0",
+  "starlette==1.9.0",
 ]
 
 [project.scripts]
 iacpaas-mcp = "iacpaas_mcp.server:main"
 iacpaas-agent = "standalone_agent.cli:main"
+iacpaas-web = "gas_web.cli:main"
 
 [dependency-groups]
 dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "ruff==0.17.1"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/iacpaas_mcp", "src/standalone_agent"]
+packages = ["src/iacpaas_mcp", "src/standalone_agent", "src/gas_web"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

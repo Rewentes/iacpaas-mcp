@@ -220,9 +220,18 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Local secrets and runtime output
+node_modules/
 .env.*
 !.env.example
 traces/
 audit/
+private-data/
 reports/*.jsonl
 reports/*.log
+
+# Browser profiles, credentials and local databases
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+.codex/

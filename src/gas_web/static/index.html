@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Газовые ресурсы · IACPaaS</title>
+  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/ring.css">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#prompt">К вводу сообщения</a>
+  <div class="shell">
+    <aside id="sidebar" class="sidebar" aria-label="История диалогов">
+      <div class="sidebar-heading"><a class="brand" href="/" aria-label="IACPaaS — начало"><span class="brand-mark" aria-hidden="true">i</span><span>IACPaaS<span class="brand-caption">Работа со знаниями</span></span></a><button id="sidebar-close" class="icon-button" type="button" aria-label="Закрыть список диалогов">×</button></div>
+      <button id="new-chat" class="new-chat" type="button" disabled><span aria-hidden="true">+</span> Новый диалог</button>
+      <div class="sidebar-section"><span id="conversation-section" class="section-label">Диалоги</span><button id="archive-toggle" type="button">Архив</button></div>
+      <nav id="conversations" aria-label="Сохранённые диалоги"><p class="muted">Загрузка истории…</p></nav>
+      <div class="sidebar-footer"><button id="settings-open" class="sidebar-settings" type="button" aria-haspopup="dialog" aria-label="Настройки" title="Настройки"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 3-1 3-3 1-2 3 2 2-1 4 3 2 3-1 2 3 4-1 1-3 3-1v-4l-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></svg><span>Настройки</span></button></div>
+    </aside>
+    <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="Закрыть список диалогов" hidden></button>
+    <main id="main">
+      <header class="topbar">
+        <div class="topbar-title"><button id="nav-toggle" class="icon-button" type="button" aria-label="Открыть список диалогов" aria-controls="sidebar" aria-expanded="false">☰</button><div><h1 id="chat-title">Новый диалог</h1></div></div>
+        <div class="topbar-actions"><button id="theme-toggle" class="icon-button theme-toggle" type="button" aria-label="Сменить тему"><svg class="sun-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="moon-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/></svg></button></div>
+      </header>
+      <section class="chat" data-empty="true" aria-label="Диалог с помощником">
+
+        <div class="timeline">
+        <div id="transcript" class="transcript" tabindex="0" aria-label="История сообщений">
+          <div class="transcript-inner">
+
+          <button id="older" class="older" type="button" hidden>Загрузить более ранние сообщения</button>
+          <div id="welcome" class="welcome">
+            <h3>Чем могу помочь?</h3>
+            <p>Задайте вопрос о газах и их характеристиках.</p>
+
+
+          </div>
+          <div id="messages" aria-label="Сообщения"></div>
+                    <div id="error" class="error-box" role="alert" hidden><p id="error-text"></p><button id="retry" type="button" hidden>Повторить</button></div>
+          </div>
+        </div>
+        <button id="scroll-latest" class="scroll-latest" type="button" hidden>↓ К последним сообщениям</button>
+        </div>
+        <div class="composer-area">
+        <p id="activity" class="activity" role="status" aria-live="polite"></p>
+        <form id="composer" class="composer">
+          <label for="prompt" class="sr-only">Ваш вопрос о газовых ресурсах</label>
+          <textarea id="prompt" name="message" rows="1" maxlength="20000" placeholder="Спросите о газах, свойствах или источниках…" aria-describedby="composer-help" disabled required></textarea>
+          <div class="composer-bottom"><span id="composer-help">Enter — отправить <span>· Shift + Enter — новая строка</span></span><button id="send" class="send" type="submit" disabled aria-label="Отправить сообщение"><span class="send-label">Отправить</span><span aria-hidden="true">↑</span></button></div>
+        </form>
+            <section id="starter-actions" class="question-ideas" aria-label="Примеры вопросов"><div id="starter-list" class="suggestions"></div><button id="starters-shuffle" type="button">Другие примеры</button></section>
+        </div>
+
+      </section>
+    </main>
+  </div>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title" data-portaltarget="settings">
+    <div class="settings-heading"><h2 id="settings-title">Настройки</h2><button id="settings-close" type="button" aria-label="Закрыть настройки">Закрыть</button></div>
+    <form id="settings-form">
+      <div class="appearance-section"><label for="theme-select">Оформление</label><select id="theme-select"><option value="system">Как в системе</option><option value="light">Светлая тема</option><option value="dark">Тёмная тема</option></select><p class="muted">Выбор сохраняется в этом браузере.</p></div>
+      <label for="settings-provider">Провайдер</label>
+      <select id="settings-provider"><option value="openrouter">OpenRouter</option><option value="openai">OpenAI API</option><option value="codex">Codex · подписка ChatGPT</option></select>
+      <label for="settings-model">Модель</label>
+      <div class="model-input-row"><input id="settings-model" list="settings-models" maxlength="200" required autocomplete="off" aria-describedby="catalog-help"><button id="models-refresh" type="button">Обновить список</button></div>
+      <datalist id="settings-models"></datalist>
+      <p id="catalog-help" class="muted">Выберите модель из списка или введите ID. Список не подтверждает доступ к модели.</p>
+      <p id="catalog-status" class="muted" role="status" aria-live="polite"></p>
+      <div id="api-key-fields">
+        <label for="settings-key">API-ключ</label>
+        <input id="settings-key" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="key-help key-warning">
+        <p id="key-help" class="muted">Оставьте поле пустым, чтобы сохранить текущий ключ.</p>
+        <label class="checkbox-label"><input id="settings-clear-key" type="checkbox"> Удалить сохранённый ключ</label>
+        <p id="key-warning" class="key-warning">По HTTP ключ передаётся без шифрования. Вводите его только в доверенной сети.</p>
+      </div>
+      <div id="codex-auth" hidden>
+        <p id="codex-status" role="status" aria-live="polite">Статус входа не проверен.</p>
+        <div class="settings-actions"><button id="codex-login" type="button">Войти через ChatGPT</button><button id="codex-logout" type="button" disabled>Выйти</button></div>
+        <div id="codex-device" hidden><p>Откройте страницу входа и введите код:</p><p><code id="codex-code"></code></p><a id="codex-link" target="_blank" rel="noopener noreferrer">Открыть страницу входа ChatGPT</a></div>
+      </div>
+      <p id="settings-status" role="status" aria-live="polite"></p>
+<p id="model-notice" class="muted" role="status" aria-live="polite"></p>
+      <p id="settings-error" class="settings-error" role="alert" hidden></p>
+      <div class="settings-actions"><button id="settings-save" class="primary" type="submit">Сохранить</button><button id="settings-test" type="button" aria-describedby="test-help">Проверить подключение</button></div>
+      <details class="connection-details"><summary>Сведения о подключении</summary>
+        <p id="model">Модель: ожидание конфигурации</p>
+        <p id="backend" class="backend-note">Источник MCP пока не проверен</p>
+        <div class="connection"><span class="status-dot" aria-hidden="true"></span><span id="connection">Подключение…</span></div>
+        <p id="context">Контекст: пока нет данных</p>
+      </details>
+      <p id="test-help" class="muted">Проверка отправит короткий запрос модели и израсходует часть лимита провайдера. Сначала сохраните изменения.</p>
+      <select id="model-select" hidden aria-hidden="true" tabindex="-1" disabled><option value="">Загрузка…</option></select>
+    </form>
+    <form id="platform-form" class="platform-section">
+      <h3>Вход в IACPaaS</h3>
+      <label for="platform-username">Логин IACPaaS</label>
+      <input id="platform-username" name="username" autocomplete="username" maxlength="300" spellcheck="false">
+      <label for="platform-password">Пароль IACPaaS</label>
+      <input id="platform-password" name="password" type="password" autocomplete="new-password" maxlength="4096">
+      <p class="muted">Оставьте пароль пустым, чтобы сохранить текущий. Данные хранятся на сервере для этого пользователя браузера и не передаются модели.</p>
+      <label class="checkbox-label"><input id="platform-clear-password" type="checkbox"> Удалить сохранённый пароль</label>
+      <p id="platform-status" role="status" aria-live="polite"></p>
+      <div class="settings-actions"><button id="platform-save" type="submit">Сохранить вход</button><button id="platform-test" type="button">Проверить доступ</button></div>
+      <p class="muted">Проверка читает один ресурс IACPaaS. Запросов к модели нет. По HTTP вводите пароль только в доверенной сети.</p>
+    </form>
+  </dialog>
+  <dialog id="delete-dialog" class="delete-dialog" aria-labelledby="delete-title"><form method="dialog"><h2 id="delete-title">Удалить диалог?</h2><p>Сообщения и рабочий контекст этого диалога будут удалены. Отменить удаление нельзя.</p><div class="settings-actions"><button value="cancel" autofocus>Отмена</button><button value="delete" class="danger">Удалить</button></div></form></dialog>
+  <noscript>Для работы с диалогами включите JavaScript.</noscript>
+</body>
+</html>

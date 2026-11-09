@@ -250,7 +250,7 @@ def test_mock_writes_are_serialized_across_direct_callers(monkeypatch):
     assert service.maximum == 1
 
 
-def test_cli_rejects_real_backend_without_silent_mock():
+def test_cli_rejects_unconfigured_real_backend_without_silent_mock():
     import os
     import subprocess
     import sys
@@ -263,5 +263,5 @@ def test_cli_rejects_real_backend_without_silent_mock():
         timeout=10,
     )
     assert result.returncode != 0
-    assert "unsupported_backend" in result.stderr
+    assert "configuration_error" in result.stderr
     assert not result.stdout

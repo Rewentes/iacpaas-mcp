@@ -18,13 +18,13 @@ from .runtime import Agent, DemoModel, Trace, redact
 
 
 @asynccontextmanager
-async def connect(transport="stdio", url="http://127.0.0.1:8000/mcp"):
+async def connect(transport="stdio", url="http://127.0.0.1:8000/mcp", *, env_overrides=None):
     if transport == "stdio":
         # Explicit copy preserves only operator-provided startup policy, never model data.
         params = StdioServerParameters(
             command=sys.executable,
             args=["-m", "iacpaas_mcp.server"],
-            env=dict(os.environ),
+            env={**os.environ, **(env_overrides or {})},
             cwd=os.getcwd(),
         )
         async with stdio_client(params) as (read, write):
@@ -88,6 +88,34 @@ async def run(args):
         else "Model: OpenAI-compatible endpoint (external request)"
     )
     trace = Trace(args.trace) if args.trace else None
+    if args.model == "openai":
+        # Import here: conversation uses this module's MCP connection factory.
+        from .conversation import ConversationAgent
+
+        async def progress(event):
+            print(event["text"], file=sys.stderr)
+
+        result = await ConversationAgent(
+            provider=model.complete,
+            reviewer=model.review,
+            session_factory=lambda: connect(args.transport, args.url),
+            max_calls=args.max_calls,
+        ).respond(args.prompt, [], on_event=progress)
+        if trace:
+            for event in result["events"]:
+                trace.record(**event)
+            verification = result["verification"]
+            trace.record(
+                name="answer_review",
+                result={
+                    "status": verification["status"],
+                    "reason": verification["reason"],
+                    "review_status": verification.get("review", {}).get("status"),
+                },
+            )
+            for block in verification.get("review", {}).get("blocks", []):
+                trace.record(name="review_block", result=block)
+        return result["answer"]
     interactive = not args.non_interactive and sys.stdin.isatty()
     async with connect(args.transport, args.url) as session:
         agent = Agent(

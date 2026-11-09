@@ -21,6 +21,6 @@
 
 ## Интеграции
 
-Текущий backend — MockBackend с синтетическими данными `normalized-demo-v1`. Для подключения IACPaaS требуется адаптер фактического API и преобразователь форматов платформы. Модельный профиль `openai` использует OpenAI-совместимый Chat Completions endpoint; `demo` выполняет детерминированные сценарии без внешней модели.
+Поддерживаются MockBackend с синтетическими данными `normalized-demo-v1` и read-only IACPaaSBackend с авторизацией по JWT и конвертацией universal в `normalized-iacpaas-v1`. Собственный веб-агент использует общий MCP-контракт; газовый инструмент сохраняет нормативные ограничения. Модельный профиль CLI `openai` использует OpenAI-совместимый Chat Completions endpoint; `demo` выполняет детерминированные сценарии без внешней модели.
 
 Состояние компонентов: [status.md](status.md). Контракт инструментов: [contract.md](contract.md). Проверки: [verification.md](verification.md).

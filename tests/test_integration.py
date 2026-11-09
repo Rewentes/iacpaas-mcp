@@ -54,4 +54,4 @@ def test_requested_real_backend_never_silently_uses_mock():
         timeout=10,
     )
     assert result.returncode != 0, "A requested real backend must fail, not run mock"
-    assert "unsupported_backend" in result.stderr
+    assert "configuration_error" in result.stderr

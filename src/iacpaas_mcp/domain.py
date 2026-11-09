@@ -65,9 +65,32 @@ class GraphService:
     def __init__(self, backend: Backend | None = None):
         if isinstance(backend, str):
             if backend != "mock":
-                raise DomainError("unsupported_backend", "Реальный API IACPaaS не подключен")
+                raise DomainError(
+                    "unsupported_backend", "Для IACPaaS передайте экземпляр IACPaaSBackend."
+                )
             backend = None
         self.backend = backend if backend is not None else MockBackend()
+
+    @staticmethod
+    def _provenance(resource):
+        details = {"mock": resource.get("mock", True)}
+        if "source" in resource:
+            details["source"] = resource["source"]
+        return details
+
+    @staticmethod
+    def _reference_warnings(resource):
+        if resource.get("mock", True):
+            return []
+        return (
+            ["Оригиналы внешних ссылок и клонов автоматически не загружались."]
+            if any(node.get("reference") for node in resource["nodes"])
+            else []
+        )
+
+    def _require_mock_write(self):
+        if getattr(self.backend, "kind", "mock") != "mock":
+            raise DomainError("permission_denied", "Изменение реальных ресурсов IACPaaS отключено.")
 
     @staticmethod
     def _bound(value: int, low: int, high: int, name: str) -> None:
@@ -75,36 +98,60 @@ class GraphService:
             raise DomainError("limit_exceeded", f"{name}: требуется целое {low}..{high}")
 
     def query_graph(
-        self, path: str, field: str = "name", value: str = "", limit: int = 100
+        self, path: str, field: str = "name", value: str = "", limit: int = 100,
+        match_mode: str = "auto"
     ) -> dict:
         self._bound(limit, 1, 2000, "limit")
         if field not in {"id", "name", "metatype", "value", "comment", "mark"}:
             raise DomainError("invalid_data", "Неизвестное поле поиска")
         if not isinstance(value, str):
             raise DomainError("invalid_data", "value должен быть строкой")
+        if match_mode not in {"auto", "exact", "contains"}:
+            raise DomainError("invalid_data", "Неизвестный режим поиска")
+        mode = ("exact" if field in {"id", "metatype"} else "contains") if match_mode == "auto" else match_mode
         resource = self._get(path)
+
+        def matches_value(node):
+            actual = str(node.get(field, ""))
+            expected = value
+            if field != "id":
+                actual, expected = actual.casefold(), expected.casefold()
+            return not value or (actual == expected if mode == "exact" else expected in actual)
+
         matches = [
             node
             for node in resource["nodes"]
-            if value.casefold() in str(node.get(field, "")).casefold()
+            if matches_value(node)
         ]
         return {
             "path": path,
             "nodes": matches[:limit],
             "total_matches": len(matches),
+            "query": {"field": field, "value": value, "match_mode": mode},
             "complete": len(matches) <= limit,
             "scope": "local_resource_query",
-            "mock": True,
-            "warnings": [] if len(matches) <= limit else ["Результат поиска ограничен limit."],
+            **self._provenance(resource),
+            "warnings": self._reference_warnings(resource)
+            + ([] if len(matches) <= limit else ["Результат поиска ограничен limit."]),
         }
 
     def export_inforesource(self, path: str) -> dict:
         return self._normalize(self._get(path))
 
+    def get_gas_specification(self, path: str, concept_id: str) -> dict:
+        from .gases import gas_specification
+
+        return gas_specification(self._get(path), concept_id)
+
     def import_inforesource(self, payload: dict, clear_if_exists: bool = False) -> dict:
+        self._require_mock_write()
         if type(clear_if_exists) is not bool:
             raise DomainError("invalid_data", "clear_if_exists должен быть boolean")
         resource = self._normalize(payload)
+        if resource.get("mock") is not True:
+            raise DomainError(
+                "invalid_data", "В mock можно импортировать только normalized-demo-v1."
+            )
         exists = any(item["path"] == resource["path"] for item in self.backend.catalog())
         if exists and not clear_if_exists:
             raise DomainError("invalid_data", "Ресурс существует; требуется clear_if_exists=true")
@@ -121,6 +168,7 @@ class GraphService:
     def update_concept(
         self, path: str, concept_id: str, mark: str | None = None, comment: str | None = None
     ) -> dict:
+        self._require_mock_write()
         resource = self._get(path)
         for node in resource["nodes"]:
             if node["id"] == concept_id:
@@ -140,6 +188,10 @@ class GraphService:
         raise DomainError("not_found", f"Вершина не найдена: {concept_id}")
 
     def _normalize(self, payload: dict) -> dict:
+        if isinstance(payload, dict) and payload.get("format") == "normalized-iacpaas-v1":
+            from .native import validate_native_graph
+
+            return validate_native_graph(payload)
         try:
             json.dumps(payload, allow_nan=False)
             return _Resource.model_validate(payload).model_dump(mode="json", exclude_unset=True)
@@ -151,7 +203,7 @@ class GraphService:
         return {
             "valid": True,
             "format": resource["format"],
-            "mock": True,
+            "mock": resource["mock"],
             "node_count": len(resource["nodes"]),
             "edge_count": len(resource["edges"]),
             "complete": True,
@@ -161,7 +213,12 @@ class GraphService:
 
     def _get(self, path: str) -> dict:
         try:
-            return self._normalize(self.backend.get(path))
+            resource = self._normalize(self.backend.get(path))
+            if (getattr(self.backend, "kind", "mock") == "mock") != resource["mock"]:
+                raise DomainError(
+                    "invalid_data", "Формат ресурса не соответствует источнику данных."
+                )
+            return resource
         except KeyError as exc:
             raise DomainError("not_found", f"Ресурс не найден: {path}") from exc
 
@@ -175,6 +232,8 @@ class GraphService:
     def _traverse(self, resource: dict, root: str, depth: int | None, max_nodes: int) -> dict:
         from collections import deque
 
+        if root == "root" and "root" in resource:
+            root = resource["root"]
         nodes = {node["id"]: node for node in resource["nodes"]}
         if root not in nodes:
             raise DomainError("not_found", f"Вершина не найдена: {root}")
@@ -204,7 +263,9 @@ class GraphService:
             if edge["source"] in selected
             and (edge["target"] in selected or edge["target"] not in nodes)
         ]
-        warnings = ["Достигнут лимит вершин."] if truncated else []
+        warnings = self._reference_warnings(resource)
+        if truncated:
+            warnings.append("Достигнут лимит вершин.")
         if any(edge["target"] not in nodes for edge in edges):
             warnings.append("Внешние цели не загружаются; экземпляры ребер учтены.")
         return {
@@ -216,7 +277,7 @@ class GraphService:
             "complete": not truncated,
             "scope": "local_reachable_depth",
             "warnings": warnings,
-            "mock": True,
+            **self._provenance(resource),
         }
 
     def count_graph(self, path: str, root: str | None = None, depth: int | None = None) -> dict:
@@ -226,7 +287,12 @@ class GraphService:
         graph = (
             self._traverse(resource, root or "root", depth, 2000)
             if root is not None or depth is not None
-            else {**resource, "complete": True, "scope": "local_resource", "warnings": []}
+            else {
+                **resource,
+                "complete": True,
+                "scope": "local_resource",
+                "warnings": self._reference_warnings(resource),
+            }
         )
         local_ids = {node["id"] for node in resource["nodes"]}
         external = sum(edge["target"] not in local_ids for edge in graph["edges"])
@@ -240,7 +306,7 @@ class GraphService:
             "complete": graph["complete"],
             "scope": graph["scope"],
             "warnings": graph["warnings"],
-            "mock": True,
+            **self._provenance(resource),
         }
 
     def list_inforesources(self, filter: str = "", limit: int = 100) -> dict:
@@ -250,24 +316,32 @@ class GraphService:
             for item in self.backend.catalog()
             if filter.casefold() in (item["path"] + item["name"]).casefold()
         ]
+        mock = getattr(self.backend, "kind", "mock") == "mock"
         return {
             "resources": items[:limit],
             "complete": False,
-            "scope": "configured_mock_catalog",
-            "mock": True,
-            "warnings": ["Каталог ограничен настроенными mock-ресурсами."],
+            "scope": "configured_mock_catalog" if mock else "configured_iacpaas_catalog",
+            "mock": mock,
+            "warnings": [
+                "Каталог ограничен настроенными mock-ресурсами."
+                if mock
+                else "Каталог содержит только настроенные ресурсы IACPaaS; доступ проверяется при чтении."
+            ],
         }
 
     def get_inforesource(self, path: str) -> dict:
         resource = self._get(path)
-        return {
+        result = {
             "path": resource["path"],
             "name": resource["name"],
             "format": resource["format"],
-            "mock": True,
+            **self._provenance(resource),
             "node_count": len(resource["nodes"]),
             "edge_count": len(resource["edges"]),
             "complete": True,
             "scope": "local_resource",
-            "warnings": [],
+            "warnings": self._reference_warnings(resource),
         }
+        if not resource.get("mock", True):
+            result.update(root=resource["root"], ontology=resource.get("ontology"))
+        return result

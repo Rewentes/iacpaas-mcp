@@ -1,6 +1,6 @@
 # Контракт инструментов
 
-Формальный снимок, полученный настоящим `tools/list`, сохранён в [tool-schemas.json](tool-schemas.json). Он относится к `mcp==1.30.0` и текущему mock backend, а не к REST API платформы.
+Формальный снимок `tools/list` для mock сохранён в [tool-schemas.json](tool-schemas.json), для IACPaaS — в [tool-schemas-iacpaas.json](tool-schemas-iacpaas.json). Они относятся к `mcp==1.30.0`, а не к REST API платформы. Read-only backend `iacpaas` использует те же читающие инструменты и дополнительно предоставляет `get_gas_specification(path, concept_id)` для нормативного состава газа. Подробности: [интеграция](iacpaas-integration.md).
 
 | Инструмент | Основные аргументы | Результат data |
 |---|---|---|
@@ -46,7 +46,7 @@ MCP `structuredContent` содержит envelope:
 {"code":"not_found","message":"Ресурс не найден: /missing/resource","retryable":false}
 ```
 
-Основные коды: not_found, invalid_data, limit_exceeded, permission_denied, timeout, platform_error. unsupported_backend при выборе неподключённого IACPaaS возвращается как ошибка запуска до MCP-сессии. Не следует принимать пустую выдачу ограниченного каталога за отсутствие ресурса во всём фонде платформы.
+Основные коды: not_found, invalid_data, limit_exceeded, permission_denied, timeout, platform_error, platform_unavailable, authentication_error. При ненастроенном реальном источнике запуск завершается `configuration_error`, без переключения на mock. Не следует принимать пустую выдачу настроенного каталога за отсутствие ресурса во всём фонде платформы. Envelope содержит `backend=mock|iacpaas`; реальный экспорт имеет `mock=false`, `format=normalized-iacpaas-v1` и `source`.
 
 ## Текущие ограничения
 

@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .review_options import openrouter_review_options
 from .runtime import Decision, ToolCall
 
 
@@ -67,22 +68,41 @@ class OpenAIModel:
                     ),
                 }
             )
+        schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": tool.inputSchema,
+                },
+            }
+            for tool in tools
+        ]
+        message = await self.complete(messages, schemas)
+        calls = []
+        for item in message.get("tool_calls", []):
+            arguments = json.loads(item["function"]["arguments"])
+            if not isinstance(arguments, dict):
+                raise ValueError("Model tool arguments must be a JSON object")
+            calls.append(ToolCall(item["function"]["name"], arguments, item["id"]))
+        return Decision(calls=calls, text=message.get("content") or "")
+
+    async def complete(self, messages, tools, *, review=False):
+        """Transport for the shared conversational engine used by CLI and web."""
         payload = {
             "model": self.model,
             "messages": messages,
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description or "",
-                        "parameters": tool.inputSchema,
-                    },
-                }
-                for tool in tools
-            ],
-            "tool_choice": "auto",
+            (
+                "max_completion_tokens"
+                if urlparse(self.url).hostname == "api.openai.com"
+                else "max_tokens"
+            ): int(os.environ.get("AGENT_OUTPUT_RESERVE", "4096")),
         }
+        if tools:
+            payload.update(tools=tools, tool_choice="auto")
+        if review and urlparse(self.url).hostname == "openrouter.ai":
+            payload.update(await openrouter_review_options(self.model, self.client))
 
         async def request(client):
             response = await client.post(
@@ -94,17 +114,15 @@ class OpenAIModel:
             response.raise_for_status()
             if len(response.content) > 1048576:
                 raise ValueError("Model response too large")
-            return response.json()["choices"][0]["message"]
+            message = response.json()["choices"][0]["message"]
+            if not isinstance(message, dict):
+                raise ValueError("Invalid assistant response")
+            return message
 
-        if self.client:
-            message = await request(self.client)
-        else:
-            async with httpx.AsyncClient(follow_redirects=False) as client:
-                message = await request(client)
-        calls = []
-        for item in message.get("tool_calls", []):
-            arguments = json.loads(item["function"]["arguments"])
-            if not isinstance(arguments, dict):
-                raise ValueError("Model tool arguments must be a JSON object")
-            calls.append(ToolCall(item["function"]["name"], arguments, item["id"]))
-        return Decision(calls=calls, text=message.get("content") or "")
+        if self.client is not None:
+            return await request(self.client)
+        async with httpx.AsyncClient(follow_redirects=False) as client:
+            return await request(client)
+
+    async def review(self, messages, tools):
+        return await self.complete(messages, tools, review=True)

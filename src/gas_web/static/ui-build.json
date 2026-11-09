@@ -1,0 +1,10 @@
+{
+  "framework": "JetBrains Ring UI",
+  "dependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@jetbrains/ring-ui-built": "7.0.133",
+    "core-js": "3.51.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
