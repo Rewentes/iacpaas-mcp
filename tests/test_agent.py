@@ -90,10 +90,10 @@ async def test_budget_counts_calls_in_batch_and_denies_untrusted_writes(tmp_path
     assert session.calls == ["count_graph"]
     import json
 
-    records = [json.loads(line) for line in path.read_text().splitlines()]
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert len(records) == 2
     assert records[0]["status"] == "denied"
-    assert "SECRET" not in path.read_text()
+    assert "SECRET" not in path.read_text(encoding="utf-8")
     if sys.platform != "win32":
         assert path.stat().st_mode & 0o777 == 0o600
 
@@ -154,5 +154,5 @@ def test_trace_redacts_key_and_bounds_file(tmp_path):
             name="count_graph", args={}, result={"huge": "x" * 10000}, status="ok", duration_ms=0
         )
     assert path.stat().st_size <= 1024
-    assert "PRIVATE" not in path.read_text()
-    assert all(json.loads(line) for line in path.read_text().splitlines())
+    assert "PRIVATE" not in path.read_text(encoding="utf-8")
+    assert all(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
