@@ -25,6 +25,19 @@ def source_context(source, result):
     return context
 
 
+def _clause_prefix(text, citation_start):
+    """Return the text governing a citation.
+
+    In prose a citation belongs to the clause after the previous citation. In a
+    Markdown table row the bound may be in the row label, so every value cell in
+    that row inherits it instead of starting after the previous cell's citation.
+    """
+    row_start = text.rfind("\n", 0, citation_start) + 1
+    if text[row_start:citation_start].lstrip().startswith("|"):
+        return text[row_start:citation_start]
+    return re.split(r"\[e\d+\]", text[:citation_start])[-1]
+
+
 def normative_issues(blocks, sources):
     """Catch local numeric/unit/bound substitutions before the model-based review."""
     issues = []
@@ -37,9 +50,7 @@ def normative_issues(blocks, sources):
             citation = "[" + source["id"] + "]"
             if citation not in block["text"]:
                 continue
-            # A citation belongs to the clause before it, up to the previous citation.
-            prefix = block["text"].split(citation, 1)[0]
-            prefix = re.split(r"\[e\d+\]", prefix)[-1]
+            prefix = _clause_prefix(block["text"], block["text"].index(citation))
             for match in re.finditer(number_pattern, prefix):
                 if Decimal(match[0].replace(",", ".")) != Decimal(str(source["value"])):
                     continue

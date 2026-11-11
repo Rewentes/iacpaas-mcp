@@ -72,6 +72,37 @@ def test_normative_value_needs_the_matching_unit_and_bound(text, code):
     assert (issues[0]["code"] if issues else None) == code
 
 
+def table_source(source_id, value, operator="≥"):
+    source = copy.deepcopy(SOURCE)
+    source.update(id=source_id, value=value, operator=operator)
+    return source
+
+
+def test_table_row_label_bound_applies_to_each_value_cell():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    table = "| He, ≥ | 99,993 % [e1] | 99,9999 % [e2] |"
+    assert normative_issues(answer_blocks(table), sources) == []
+
+
+def test_table_row_label_bound_is_still_checked():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    table = "| He, ≤ | 99,993 % [e1] | 99,9999 % [e2] |"
+    issues = normative_issues(answer_blocks(table), sources)
+    assert [(item["source_id"], item["code"]) for item in issues] == [
+        ("e1", "bound_mismatch"),
+        ("e2", "bound_mismatch"),
+    ]
+
+
+def test_explicit_table_cell_bound_overrides_the_row_label():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    table = "| He, ≥ | 99,993 % [e1] | ≤ 99,9999 % [e2] |"
+    issues = normative_issues(answer_blocks(table), sources)
+    assert [(item["source_id"], item["code"]) for item in issues] == [
+        ("e2", "bound_mismatch")
+    ]
+
+
 def test_review_payload_keeps_gas_identity_normative_kind_and_source_provenance():
     blocks, messages = review_messages("Чистота?", GOOD, [SOURCE], PROVENANCE, [])
     payload = json.loads(messages[-1]["content"])
