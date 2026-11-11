@@ -9,7 +9,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from standalone_agent.conversation import ConversationError
+from standalone_agent.completion import completion_message
+from standalone_agent.errors import ConversationError
 from standalone_agent.review_options import openrouter_review_options
 
 PROVIDERS = [
@@ -250,17 +251,10 @@ class ModelSettings:
                 data = await api_request(
                     profile.provider, "/chat/completions", api_key=profile.api_key, payload=payload
                 )
-                message = data["choices"][0]["message"]
-                reject_credential_echo(message, profile.api_key)
-                if (
-                    not isinstance(message, dict)
-                    or message.get("role") != "assistant"
-                    or not isinstance(message.get("content"), (str, type(None)))
-                    or message.get("content") is None
-                    and not message.get("tool_calls")
-                ):
-                    raise ValueError("Invalid assistant response")
-                return message
+                reject_credential_echo(data, profile.api_key)
+                return completion_message(data)
+            except ConversationError:
+                raise
             except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError):
                 raise ConversationError("Запрос к выбранному провайдеру не выполнен.") from None
 

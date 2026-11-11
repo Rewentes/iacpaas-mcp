@@ -9,7 +9,9 @@ import httpx
 from .answers import authored_answer, parse_answer, visible_text
 from .citations import strip_citations
 from .cli import connect
-from .prompts import SUMMARY_CONTEXT_NOTE, summary_prompt, system_prompt
+from .completion import completion_message
+from .errors import ConversationError
+from .prompts import ANSWER_FORMAT_NOTE, SUMMARY_CONTEXT_NOTE, summary_prompt, system_prompt
 from .review_options import openrouter_review_options
 from .runtime import SECRET, WRITES, redact
 from .verification import normative_issues, review_messages, validate_review
@@ -96,14 +98,6 @@ def collect_evidence(data, registry, field="", path=None, concept=None, unit=Non
             }
 
 
-class ConversationError(ValueError):
-    """Safe public failure; never include provider/transport exception text."""
-
-    def __init__(self, message, code="agent_error"):
-        super().__init__(message)
-        self.code = code
-
-
 class ConversationAgent:
     def __init__(
         self,
@@ -181,7 +175,7 @@ class ConversationAgent:
             response.raise_for_status()
             if len(response.content) > 1048576:
                 raise ValueError("Provider response exceeds limit")
-            return response.json()["choices"][0]["message"]
+            return completion_message(response.json())
 
         if self.client is not None:
             return await request(self.client)
@@ -535,21 +529,55 @@ class ConversationAgent:
                     await emit("commentary", response["content"])
                 if not calls:
                     await emit("status", "Подготавливаю ответ и проверяю ссылки на источники.")
-                    try:
-                        decision = parse_answer(
-                            response.get("content"), has_evidence=bool(registry)
-                        )
-                    except (ValueError, TypeError):
-                        raise ConversationError(
-                            "Некорректный формат решения модели.", "model_output_error"
-                        ) from None
-                    if isinstance(decision, dict) and decision.get("type") == "answer":
+                    for attempt in range(2):
                         try:
-                            rendered = authored_answer(decision, registry, provenance)
-                        except (ValueError, TypeError):
-                            raise ConversationError(
-                                "Некорректный формат ответа модели.", "model_output_error"
-                            ) from None
+                            decision = parse_answer(
+                                response.get("content"), has_evidence=bool(registry)
+                            )
+                            rendered = (
+                                authored_answer(decision, registry, provenance)
+                                if isinstance(decision, dict) and decision.get("type") == "answer"
+                                else None
+                            )
+                            break
+                        except (ValueError, TypeError) as exc:
+                            diagnostic = (
+                                str(exc)
+                                if str(exc)
+                                in {
+                                    "empty_answer",
+                                    "broken_answer_envelope",
+                                    "invalid_answer_envelope",
+                                    "invalid_answer_text",
+                                    "unknown_answer_envelope",
+                                    "invalid_answer",
+                                    "invalid_source_reference",
+                                    "invalid_source_range",
+                                    "source_reference_limit",
+                                }
+                                else "answer_parse"
+                            )
+                            if attempt or not visible_text(response.get("content")):
+                                raise ConversationError(
+                                    "Некорректный формат ответа модели.",
+                                    "model_output_error",
+                                    diagnostic=diagnostic,
+                                ) from None
+                            await emit(
+                                "status", "Исправляю оформление ответа по уже полученным данным."
+                            )
+                            # One format correction within this turn. No tool replay,
+                            # new user message, unverified publication or private draft.
+                            response = await self._complete(
+                                [*dialogue, {"role": "system", "content": ANSWER_FORMAT_NOTE}], []
+                            )
+                            if response.get("tool_calls"):
+                                raise ConversationError(
+                                    "При исправлении формата модель вызвала инструмент.",
+                                    "model_output_error",
+                                    diagnostic="format_repair_tool_call",
+                                )
+                    if rendered is not None:
                         if rendered["verification"]["status"] == "grounded":
                             rendered = await self._review_answer(
                                 message,

@@ -28,6 +28,9 @@ AGENT_FAILURES = {
     "context_limit": "Достигнут лимит рабочего контекста. Сузьте запрос или начните новый диалог.",
     "tool_limit": "Достигнут лимит обращений к ресурсам. Уточните газ и нужную характеристику.",
     "model_output_error": "Модель вернула ответ в неподдерживаемом формате. Проверенный ответ не сформирован.",
+    "model_output_limit": "Модель исчерпала лимит вывода до завершения ответа. Увеличьте лимит вывода в настройках запуска или сузьте запрос.",
+    "empty_model_output": "Провайдер вернул пустой ответ модели. Проверенный ответ не сформирован.",
+    "model_refusal": "Провайдер отклонил формирование ответа. Проверенный ответ не сформирован.",
     "provider_unavailable": "Не удалось получить ответ модели. Проверьте доступность провайдера.",
     "agent_error": "Не удалось завершить обработку запроса к модели или MCP.",
 }
@@ -440,7 +443,9 @@ def create_app(*, db_path=None, agent=None, bind_host=None, trusted_hosts=None):
                     if code not in AGENT_FAILURES:
                         code = "agent_error"
                     logging.getLogger(__name__).warning(
-                        "Conversation failed: %s", "configuration_error" if configuration else code
+                        "Conversation failed: %s (%s)",
+                        "configuration_error" if configuration else code,
+                        getattr(exc, "diagnostic", None) or "unspecified",
                     )
                     response = {
                         "error": {

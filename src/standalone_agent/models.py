@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .completion import completion_message
 from .review_options import openrouter_review_options
 from .runtime import Decision, ToolCall
 
@@ -114,10 +115,7 @@ class OpenAIModel:
             response.raise_for_status()
             if len(response.content) > 1048576:
                 raise ValueError("Model response too large")
-            message = response.json()["choices"][0]["message"]
-            if not isinstance(message, dict):
-                raise ValueError("Invalid assistant response")
-            return message
+            return completion_message(response.json())
 
         if self.client is not None:
             return await request(self.client)
