@@ -12,11 +12,16 @@ from .runtime import redact
 
 
 def answer_blocks(text):
-    return [
-        {"id": f"b{index + 1}", "text": block.strip()}
-        for index, block in enumerate(re.split(r"\n\s*\n|\n(?=\s*[-*]\s)", text))
-        if block.strip()
-    ]
+    blocks = []
+    for block in re.split(r"\n\s*\n|\n(?=\s*[-*]\s)", text):
+        block = block.strip()
+        if not block:
+            continue
+        if blocks and block.startswith("|") and blocks[-1].endswith(":"):
+            blocks[-1] = blocks[-1] + "\n" + block
+        else:
+            blocks.append(block)
+    return [{"id": f"b{index + 1}", "text": block} for index, block in enumerate(blocks)]
 
 
 def source_context(source, result):
@@ -70,6 +75,15 @@ def _table_context(text, citation_start):
             continue
         header = header_parts[cell_index].strip() if cell_index < len(header_parts) else ""
         break
+    caption = ""
+    lines_before = text[:row_start].splitlines()
+    index = len(lines_before) - 1
+    while index >= 0 and lines_before[index].lstrip().startswith("|"):
+        index -= 1
+    while index >= 0 and not lines_before[index].strip():
+        index -= 1
+    if index >= 0 and lines_before[index].strip().endswith(":"):
+        caption = lines_before[index].strip()
     left = []
     for part in reversed(parts[:cell_index]):
         text_part = part.strip()
@@ -84,6 +98,7 @@ def _table_context(text, citation_start):
         "cell": cell,
         "label": label,
         "header": header,
+        "caption": caption,
         "left": left,
         "units": units,
     }
@@ -141,7 +156,12 @@ def normative_issues(blocks, sources):
                 if table and (not following or following[0] in "[](),.;:"):
                     # A table may carry the unit in a row label, column header or unit cell.
                     unit_ok = False
-                    for candidate in [table["label"], table["header"], *table["units"]]:
+                    for candidate in [
+                        table["label"],
+                        table["header"],
+                        *table["units"],
+                        table["caption"],
+                    ]:
                         if not candidate:
                             continue
                         if any(alias in _normalized(candidate) for alias in aliases):

@@ -160,6 +160,32 @@ def test_table_operator_column_can_carry_the_bound():
     assert normative_issues(answer_blocks(table), sources) == []
 
 
+def test_table_caption_can_carry_the_unit_before_a_blank_line():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    answer = (
+        "Нормативные пределы объёмной доли, %:\n\n"
+        "| Показатель | Марка 4.6 | Марка 5.5 |\n"
+        "|---|---|---|\n"
+        "| He | ≥ 99,993 [e1] | ≥ 99,9999 [e2] |"
+    )
+    assert normative_issues(answer_blocks(answer), sources) == []
+
+
+def test_wrong_table_caption_unit_is_still_checked():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    answer = (
+        "Нормативные пределы объёмной доли, ppm:\n\n"
+        "| Показатель | Марка 4.6 | Марка 5.5 |\n"
+        "|---|---|---|\n"
+        "| He | ≥ 99,993 [e1] | ≥ 99,9999 [e2] |"
+    )
+    issues = normative_issues(answer_blocks(answer), sources)
+    assert [(item["source_id"], item["code"]) for item in issues] == [
+        ("e1", "unit_mismatch"),
+        ("e2", "unit_mismatch"),
+    ]
+
+
 def test_review_payload_keeps_gas_identity_normative_kind_and_source_provenance():
     blocks, messages = review_messages("Чистота?", GOOD, [SOURCE], PROVENANCE, [])
     payload = json.loads(messages[-1]["content"])
@@ -397,6 +423,28 @@ def test_supported_parts_are_published_without_the_rejected_claim():
     assert result["verification"]["status"] == "partial"
     assert "99,993" in result["answer"] and "999" not in result["answer"]
     assert "Подтверждена только эта часть" in result["answer"]
+
+
+def test_incomplete_review_is_retried_per_block_without_relaxing_the_gate():
+    calls = []
+
+    async def reviewer(messages, tools):
+        payload = json.loads(messages[-1]["content"])
+        blocks = payload["blocks"]
+        calls.append(len(blocks))
+        if len(blocks) > 1:
+            return report_for(blocks[:-1])
+        return report_for(blocks)
+
+    draft = render(GOOD + "\n\n" + GOOD + "\n\n" + GOOD)
+    result = asyncio.run(
+        ConversationAgent(reviewer=reviewer)._review_answer(
+            "Какая чистота?", draft, PROVENANCE, [], noop
+        )
+    )
+    assert result["verification"]["status"] == "reviewed"
+    assert result["answer"] == draft["answer"]
+    assert calls == [3, 1, 1, 1]
 
 
 def test_warning_alone_is_not_a_useful_partial_data_answer():

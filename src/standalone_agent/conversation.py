@@ -228,6 +228,59 @@ class ConversationAgent:
                 index += 1
         return removed
 
+    async def _review_packet(self, system, packet, blocks, sources, document_refs):
+        """Ask the reviewer about an explicit subset of answer blocks."""
+        request_packet = dict(packet, blocks=blocks)
+        request = [
+            system,
+            {"role": "user", "content": encoded(request_packet)},
+        ]
+        if estimate(request, []) + self.output_reserve > self.context_limit:
+            raise ValueError("review_context_limit")
+        async with asyncio.timeout(45):
+            response = await (
+                self.reviewer(request, [])
+                if self.reviewer
+                else self._complete(request, [], review=True)
+            )
+        return validate_review(response, blocks, sources, document_refs)
+
+    async def _review_in_parts(self, system, packet, blocks, sources, document_refs):
+        """Recover from a short review report by checking each block separately."""
+        if len(blocks) > 12:
+            raise ValueError("review_context_limit")
+        validated = []
+        answers = []
+        for block in blocks:
+            try:
+                part = await self._review_packet(
+                    system, packet, [block], sources, document_refs
+                )
+            except Exception:
+                validated.append(
+                    {
+                        "block_id": block["id"],
+                        "text": block["text"],
+                        "status": "unsupported",
+                        "source_ids": [],
+                        "reason": "Проверка этого блока не завершена.",
+                    }
+                )
+                continue
+            answers.append(part["answers_question"])
+            validated.extend(part["blocks"])
+        if not any(item["status"] in {"supported", "not_factual"} for item in validated):
+            raise ValueError("review_unavailable")
+        accepted = bool(answers) and all(answers) and all(
+            item["status"] in {"supported", "not_factual"} for item in validated
+        )
+        return {
+            "status": "accepted" if accepted else "rejected",
+            "answers_question": bool(answers) and all(answers),
+            "reason": "Утверждения проверены по блокам.",
+            "blocks": validated,
+        }
+
     async def _review_answer(self, question, rendered, provenance, history, emit, summary=None):
         await emit(
             "status",
@@ -283,12 +336,32 @@ class ConversationAgent:
                         else "review_unavailable"
                     )
                 )
-                review = {
-                    "status": "unavailable",
-                    "reason": "Не удалось получить полный корректный отчёт проверки.",
-                    "diagnostic_code": diagnostic,
-                    "blocks": [],
-                }
+                review = None
+                if diagnostic == "incomplete_review":
+                    await emit(
+                        "status",
+                        "Отчёт сверки пришёл не на все блоки; проверяю утверждения по одному.",
+                    )
+                    try:
+                        review = await self._review_in_parts(
+                            request[0],
+                            packet,
+                            blocks,
+                            sources,
+                            {
+                                source["id"]: source["document_id"]
+                                for source in packet["sources"]
+                            },
+                        )
+                    except Exception:
+                        review = None
+                if review is None:
+                    review = {
+                        "status": "unavailable",
+                        "reason": "Не удалось получить полный корректный отчёт проверки.",
+                        "diagnostic_code": diagnostic,
+                        "blocks": [],
+                    }
         verification = dict(rendered["verification"], review=review, documents=packet["documents"])
         if review.get("status") == "rejected" and review.get("answers_question") is True:
             warnings = {
