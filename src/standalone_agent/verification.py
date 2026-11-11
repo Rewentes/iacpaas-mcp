@@ -25,16 +25,26 @@ def source_context(source, result):
     return context
 
 
-def _clause_prefix(text, citation_start):
-    """Return the text governing a citation.
-
-    In prose a citation belongs to the clause after the previous citation. In a
-    Markdown table row the bound may be in the row label, so every value cell in
-    that row inherits it instead of starting after the previous cell's citation.
-    """
+def _table_context(text, citation_start):
+    """Return the table cell with the citation and its row label, if any."""
     row_start = text.rfind("\n", 0, citation_start) + 1
-    if text[row_start:citation_start].lstrip().startswith("|"):
-        return text[row_start:citation_start]
+    row_end = text.find("\n", citation_start)
+    if row_end < 0:
+        row_end = len(text)
+    row = text[row_start:row_end]
+    if not row.lstrip().startswith("|"):
+        return None
+    position = citation_start - row_start
+    pipes = [index for index, char in enumerate(row) if char == "|"]
+    left = [index for index in pipes if index < position]
+    right = [index for index in pipes if index > position]
+    cell = row[(left[-1] + 1 if left else 0) : (right[0] if right else len(row))]
+    labels = [part.strip() for part in row.split("|") if part.strip()]
+    return cell, labels[0] if labels else ""
+
+
+def _clause_prefix(text, citation_start):
+    """Return the prose governing a citation, up to the previous citation."""
     return re.split(r"\[e\d+\]", text[:citation_start])[-1]
 
 
@@ -43,6 +53,10 @@ def normative_issues(blocks, sources):
     issues = []
     number_pattern = r"(?<![\w])[+-]?\d+(?:[.,]\d+)?"
     bound_pattern = r"не\s+более|не\s+менее|не\s+выше|не\s+ниже|≤|≥|<=|>=|максимум|минимум"
+    expected = {
+        "≤": {"не более", "не выше", "≤", "<=", "максимум"},
+        "≥": {"не менее", "не ниже", "≥", ">=", "минимум"},
+    }
     for block in blocks:
         for source in sources:
             if source.get("value_kind") != "normative_limit":
@@ -50,17 +64,20 @@ def normative_issues(blocks, sources):
             citation = "[" + source["id"] + "]"
             if citation not in block["text"]:
                 continue
-            prefix = _clause_prefix(block["text"], block["text"].index(citation))
-            for match in re.finditer(number_pattern, prefix):
+            citation_start = block["text"].index(citation)
+            table = _table_context(block["text"], citation_start)
+            if table:
+                context, label = table
+            else:
+                context, label = _clause_prefix(block["text"], citation_start), ""
+            for match in re.finditer(number_pattern, context):
                 if Decimal(match[0].replace(",", ".")) != Decimal(str(source["value"])):
                     continue
-                before, after = prefix[: match.start()], prefix[match.end() :]
+                before, after = context[: match.start()], context[match.end() :]
                 bounds = list(re.finditer(bound_pattern, before, re.I))
+                if table and not bounds:
+                    bounds = list(re.finditer(bound_pattern, label, re.I))
                 actual = bounds[-1][0].lower() if bounds else ""
-                expected = {
-                    "≤": {"не более", "не выше", "≤", "<=", "максимум"},
-                    "≥": {"не менее", "не ниже", "≥", ">=", "минимум"},
-                }
                 if re.sub(r"\s+", " ", actual) not in expected.get(source.get("operator"), set()):
                     issues.append(
                         {
@@ -76,7 +93,13 @@ def normative_issues(blocks, sources):
                     if unit == "%"
                     else (unit,)
                 )
-                if unit and not following.startswith(aliases):
+                if table and (not following or following[0] in "[](),.;:"):
+                    # A table may put the unit in the row label instead of every cell.
+                    unit_ok = any(alias in re.sub(r"[\s*`_]", "", label).casefold()
+                                  for alias in aliases)
+                else:
+                    unit_ok = following.startswith(aliases)
+                if unit and not unit_ok:
                     issues.append(
                         {
                             "block_id": block["id"],
@@ -84,7 +107,9 @@ def normative_issues(blocks, sources):
                             "code": "unit_mismatch",
                         }
                     )
-    return issues
+    return list(
+        {(item["block_id"], item["source_id"], item["code"]): item for item in issues}.values()
+    )
 
 
 def review_messages(question, answer, sources, provenance, history, summary=None):
