@@ -134,6 +134,32 @@ def test_explicit_table_cell_unit_overrides_the_row_label():
     ]
 
 
+def test_table_column_header_can_carry_the_unit():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    table = (
+        "| Показатель | Марка 4.6, % | Марка 5.5, % |\n"
+        "|---|---|---|\n"
+        "| He | ≥ 99,993 [e1] | ≥ 99,9999 [e2] |"
+    )
+    assert normative_issues(answer_blocks(table), sources) == []
+
+
+def test_table_unit_column_can_carry_the_unit():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    table = (
+        "| Показатель | Ед. | Марка 4.6 | Марка 5.5 |\n"
+        "|---|---|---|---|\n"
+        "| He | % | ≥ 99,993 [e1] | ≥ 99,9999 [e2] |"
+    )
+    assert normative_issues(answer_blocks(table), sources) == []
+
+
+def test_table_operator_column_can_carry_the_bound():
+    sources = [table_source("e1", 99.993), table_source("e2", 99.9999)]
+    table = "| He | ≥ | 99,993 % [e1] | 99,9999 % [e2] |"
+    assert normative_issues(answer_blocks(table), sources) == []
+
+
 def test_review_payload_keeps_gas_identity_normative_kind_and_source_provenance():
     blocks, messages = review_messages("Чистота?", GOOD, [SOURCE], PROVENANCE, [])
     payload = json.loads(messages[-1]["content"])

@@ -25,8 +25,25 @@ def source_context(source, result):
     return context
 
 
+UNIT_PATTERN = re.compile(
+    r"(?<![\w])(?:%|ppm|мг\s*/\s*м[³3]|г\s*/\s*м[³3]|кг\s*/\s*м[³3]|"
+    r"МПа|кПа|Па|бар|°[CС]|процент(?:ов|а)?|об\.?\s*%)(?!\w)",
+    re.I,
+)
+NUMBER_PATTERN = r"(?<![\w])[+-]?\d+(?:[.,]\d+)?"
+CITATION_PATTERN = r"\[e\d+\]"
+
+
+def _normalized(text):
+    return re.sub(r"[\s*`_]", "", text).casefold()
+
+
+def _is_value_cell(text):
+    return bool(re.search(CITATION_PATTERN, text) or re.search(NUMBER_PATTERN, text))
+
+
 def _table_context(text, citation_start):
-    """Return the table cell with the citation and its row label, if any."""
+    """Return the table cell with the citation, its row label, header and unit cells."""
     row_start = text.rfind("\n", 0, citation_start) + 1
     row_end = text.find("\n", citation_start)
     if row_end < 0:
@@ -35,23 +52,51 @@ def _table_context(text, citation_start):
     if not row.lstrip().startswith("|"):
         return None
     position = citation_start - row_start
-    pipes = [index for index, char in enumerate(row) if char == "|"]
-    left = [index for index in pipes if index < position]
-    right = [index for index in pipes if index > position]
-    cell = row[(left[-1] + 1 if left else 0) : (right[0] if right else len(row))]
-    labels = [part.strip() for part in row.split("|") if part.strip()]
-    return cell, labels[0] if labels else ""
+    parts = row.split("|")
+    cell_index = sum(1 for index, char in enumerate(row) if char == "|" and index < position)
+    cell = parts[cell_index] if cell_index < len(parts) else ""
+    labels = [part.strip() for part in parts if part.strip()]
+    label = labels[0] if labels else ""
+    header = ""
+    for line in reversed(text[:row_start].splitlines()):
+        if not line.lstrip().startswith("|"):
+            break
+        header_parts = line.split("|")
+        if len(header_parts) != len(parts):
+            continue
+        if all(set(part.strip()) <= set("-: ") for part in header_parts if part.strip()):
+            continue
+        if re.search(CITATION_PATTERN, line):
+            continue
+        header = header_parts[cell_index].strip() if cell_index < len(header_parts) else ""
+        break
+    left = []
+    for part in reversed(parts[:cell_index]):
+        text_part = part.strip()
+        if text_part and not _is_value_cell(text_part):
+            left.append(text_part)
+    units = []
+    for index, part in enumerate(parts):
+        text_part = part.strip()
+        if index != cell_index and text_part and not _is_value_cell(text_part):
+            units.append(text_part)
+    return {
+        "cell": cell,
+        "label": label,
+        "header": header,
+        "left": left,
+        "units": units,
+    }
 
 
 def _clause_prefix(text, citation_start):
     """Return the prose governing a citation, up to the previous citation."""
-    return re.split(r"\[e\d+\]", text[:citation_start])[-1]
+    return re.split(CITATION_PATTERN, text[:citation_start])[-1]
 
 
 def normative_issues(blocks, sources):
     """Catch local numeric/unit/bound substitutions before the model-based review."""
     issues = []
-    number_pattern = r"(?<![\w])[+-]?\d+(?:[.,]\d+)?"
     bound_pattern = r"не\s+более|не\s+менее|не\s+выше|не\s+ниже|≤|≥|<=|>=|максимум|минимум"
     expected = {
         "≤": {"не более", "не выше", "≤", "<=", "максимум"},
@@ -66,17 +111,17 @@ def normative_issues(blocks, sources):
                 continue
             citation_start = block["text"].index(citation)
             table = _table_context(block["text"], citation_start)
-            if table:
-                context, label = table
-            else:
-                context, label = _clause_prefix(block["text"], citation_start), ""
-            for match in re.finditer(number_pattern, context):
+            context = table["cell"] if table else _clause_prefix(block["text"], citation_start)
+            for match in re.finditer(NUMBER_PATTERN, context):
                 if Decimal(match[0].replace(",", ".")) != Decimal(str(source["value"])):
                     continue
                 before, after = context[: match.start()], context[match.end() :]
                 bounds = list(re.finditer(bound_pattern, before, re.I))
                 if table and not bounds:
-                    bounds = list(re.finditer(bound_pattern, label, re.I))
+                    for part in [*table["left"], table["label"]]:
+                        bounds = list(re.finditer(bound_pattern, part, re.I))
+                        if bounds:
+                            break
                 actual = bounds[-1][0].lower() if bounds else ""
                 if re.sub(r"\s+", " ", actual) not in expected.get(source.get("operator"), set()):
                     issues.append(
@@ -86,17 +131,24 @@ def normative_issues(blocks, sources):
                             "code": "bound_mismatch",
                         }
                     )
-                unit = re.sub(r"\s+", "", source.get("unit") or "").casefold()
-                following = re.sub(r"[\s*`_]", "", after).casefold()
+                unit = _normalized(source.get("unit") or "")
+                following = _normalized(after)
                 aliases = (
                     ("%", "процент", "об.%", "объемныхпроцент", "объёмныхпроцент")
                     if unit == "%"
                     else (unit,)
                 )
                 if table and (not following or following[0] in "[](),.;:"):
-                    # A table may put the unit in the row label instead of every cell.
-                    unit_ok = any(alias in re.sub(r"[\s*`_]", "", label).casefold()
-                                  for alias in aliases)
+                    # A table may carry the unit in a row label, column header or unit cell.
+                    unit_ok = False
+                    for candidate in [table["label"], table["header"], *table["units"]]:
+                        if not candidate:
+                            continue
+                        if any(alias in _normalized(candidate) for alias in aliases):
+                            unit_ok = True
+                            break
+                        if UNIT_PATTERN.search(candidate):
+                            break
                 else:
                     unit_ok = following.startswith(aliases)
                 if unit and not unit_ok:
