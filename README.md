@@ -21,7 +21,7 @@
 
 ## Установка и быстрый запуск
 
-Нужны Python 3.11+ и [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Нужны Python 3.11+ и [uv](https://docs.astral.sh/uv/getting-started/installation/). На Windows те же шаги выполняются в PowerShell; Docker и WSL для прямого запуска не нужны — см. [запуск в Windows](#запуск-без-контейнера-в-windows-powershell).
 
 ```sh
 git clone https://github.com/Rewentes/iacpaas-mcp.git
@@ -30,7 +30,11 @@ uv sync --frozen
 uv run --frozen iacpaas-agent "найди университет и покажи метаданные" --model demo --trace traces/demo.jsonl
 ```
 
-При stdio-подключении агент запускает MCP-сервер автоматически.
+При stdio-подключении агент запускает MCP-сервер автоматически. В PowerShell для воспроизводимой проверки без интерактивного подтверждения:
+
+```powershell
+uv run --frozen iacpaas-agent "найди университет и покажи метаданные" --model demo --trace traces/demo.jsonl --non-interactive
+```
 
 ## Веб-чат
 
@@ -46,6 +50,12 @@ cp .env.example .env
 
 ```sh
 docker compose --env-file /dev/null up -d --build
+```
+
+В PowerShell на Windows используйте `NUL` вместо `/dev/null`, а `.env` создайте через `Copy-Item .env.example .env`:
+
+```powershell
+docker compose --env-file NUL up -d --build
 ```
 
 Откройте [веб-чат](http://127.0.0.1:8080). История и профили сохраняются в постоянном томе. В **Настройки → Вход в IACPaaS** введите логин и пароль; отдельная кнопка проверяет вход и чтение одного ресурса без обращения к модели. API-ключ и модель выбираются там же. Пути разрешённых ресурсов задаёт оператор в `.env`. Настройки браузера действуют на веб-чат; внешний MCP использует собственное окружение. Управление, резервное копирование и настройка LAN-доступа: [docker.md](docs/docker.md).
@@ -64,6 +74,39 @@ uv run --frozen --env-file .env iacpaas-web --host 127.0.0.1 --port 8080
 Откройте `http://127.0.0.1:8080`. Модель задаётся через `OPENROUTER_MODEL`; значение по умолчанию — `deepseek/deepseek-v4.1-flash`. Без ключа приложение не подменяет LLM демонстрационными ответами: диалоги доступны, а отправка запроса сообщает об отсутствии настройки.
 
 При `IACPAAS_BACKEND=iacpaas` веб-агент работает с настроенными ресурсами платформы. Специальный инструмент `get_gas_specification` возвращает нормативные границы состава газа с единицами и знаками ≤/≥. Они не выдаются за фактически измеренные примеси. При `mock` интерфейс явно показывает тестовый источник. Инструкция и HTTP API: [web.md](docs/web.md).
+
+### Запуск без контейнера в Windows (PowerShell)
+
+Прямой запуск не требует Docker, WSL или активации виртуального окружения: Python 3.11+ скачивает `uv`, зависимости ставит `uv sync`. Проверено на Windows 11 в PowerShell 5.1 и PowerShell 7.
+
+Установите Git и `uv`, затем клонируйте проект:
+
+```powershell
+winget install --id Git.Git -e --source winget
+winget install --id astral-sh.uv -e --source winget
+git clone https://github.com/Rewentes/iacpaas-mcp.git
+Set-Location iacpaas-mcp
+```
+
+После установки откройте новое окно PowerShell, чтобы обновился `PATH`, и выполните:
+
+```powershell
+uv sync --frozen
+Copy-Item .env.example .env
+# Демонстрационный режим: IACPAAS_BACKEND=mock уже задан в .env.example.
+# Для реальных ответов модели добавьте OPENROUTER_API_KEY в .env.
+uv run --frozen --env-file .env iacpaas-web --host 127.0.0.1 --port 8080
+```
+
+Откройте чат во втором окне PowerShell:
+
+```powershell
+Start-Process http://127.0.0.1:8080
+```
+
+Сервер останавливается сочетанием `Ctrl+C` в первом окне. Если `winget` недоступен, установите Git и `uv` вручную и проверьте, что `git` и `uv` есть в `PATH`.
+
+Без ключа провайдера чат открывается, история и настройки работают, но отправка запроса сообщает об отсутствии настройки — демонстрационная подмена LLM не включается. `IACPAAS_BACKEND=mock` включает синтетические ресурсы MCP; для реальной платформы задайте `iacpaas` и учётные данные, как описано выше.
 
 ## Как проходит запрос
 

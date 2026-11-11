@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 
@@ -92,7 +94,8 @@ async def test_budget_counts_calls_in_batch_and_denies_untrusted_writes(tmp_path
     assert len(records) == 2
     assert records[0]["status"] == "denied"
     assert "SECRET" not in path.read_text()
-    assert path.stat().st_mode & 0o777 == 0o600
+    if sys.platform != "win32":
+        assert path.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.asyncio

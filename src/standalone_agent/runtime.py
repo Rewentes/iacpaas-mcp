@@ -125,16 +125,31 @@ def redact(value, *, max_text=2048, max_list=50):
     return value
 
 
+# O_NOFOLLOW and fchmod are POSIX-only; Windows defines neither.
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_BINARY = getattr(os, "O_BINARY", 0)
+_FCHMOD = getattr(os, "fchmod", None)
+
+
+def _private_fd(path, flags):
+    """Open a private file; refuse a symlink even where O_NOFOLLOW is unavailable."""
+    if not _NOFOLLOW and path.is_symlink():
+        raise ValueError(f"Refusing to follow a symbolic link: {path}")
+    fd = os.open(path, flags | _NOFOLLOW | _BINARY, 0o600)
+    if _FCHMOD is not None:
+        _FCHMOD(fd, 0o600)
+    return fd
+
+
 class Trace:
-    """At most max_bytes per run; never follow a trace symlink; mode 0600."""
+    """At most max_bytes per run; never follow a trace symlink; mode 0600 on POSIX."""
 
     def __init__(self, path, max_bytes=262144, max_record_bytes=16384):
         self.path = Path(path)
         self.max_bytes = max_bytes
         self.max_record_bytes = max_record_bytes
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-        os.fchmod(fd, 0o600)
+        fd = _private_fd(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
         os.close(fd)
         self.written = 0
 
@@ -148,7 +163,7 @@ class Trace:
         data = (line + "\n").encode()
         if self.written + len(data) > self.max_bytes:
             return
-        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+        fd = _private_fd(self.path, os.O_WRONLY | os.O_APPEND)
         try:
             os.write(fd, data)
         finally:
