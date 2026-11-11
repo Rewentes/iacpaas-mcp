@@ -130,7 +130,7 @@ def test_native_tool_context_retires_whole_results_but_keeps_full_events_and_evi
                 ],
             }
         assert tools == []
-        assert "Remaining MCP calls: 0" in messages[0]["content"]
+        assert "Осталось вызовов MCP: 0" in messages[0]["content"]
         evidence = json.loads(messages[-1]["content"])["evidence"]
         source = next(s for s in evidence if s["field"] == "value")
         claim = {k: v for k, v in source.items() if k != "id"}
