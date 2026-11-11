@@ -136,9 +136,13 @@ def _private_fd(path, flags):
     if not _NOFOLLOW and path.is_symlink():
         raise ValueError(f"Refusing to follow a symbolic link: {path}")
     fd = os.open(path, flags | _NOFOLLOW | _BINARY, 0o600)
-    if _FCHMOD is not None:
-        _FCHMOD(fd, 0o600)
-    return fd
+    try:
+        if _FCHMOD is not None:
+            _FCHMOD(fd, 0o600)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 class Trace:

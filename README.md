@@ -79,20 +79,20 @@ uv run --frozen --env-file .env iacpaas-web --host 127.0.0.1 --port 8080
 
 Прямой запуск не требует Docker, WSL или активации виртуального окружения: `uv` сам скачает Python 3.11+ при необходимости, а зависимости установит `uv sync`. Проверено на Windows 11 в PowerShell 5.1 и PowerShell 7.
 
-Установите Git и `uv`, затем клонируйте проект:
+Установите Git и `uv`:
 
 ```powershell
 winget install --id Git.Git -e --source winget
 winget install --id astral-sh.uv -e --source winget
-git clone https://github.com/Rewentes/iacpaas-mcp.git
-Set-Location iacpaas-mcp
 ```
 
-После установки откройте новое окно PowerShell, чтобы обновился `PATH`, и выполните:
+После установки откройте новое окно PowerShell, чтобы обновился `PATH`. Затем клонируйте проект и запустите приложение:
 
 ```powershell
+git clone https://github.com/Rewentes/iacpaas-mcp.git
+Set-Location iacpaas-mcp
 uv sync --frozen
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 # Демонстрационный режим: IACPAAS_BACKEND=mock уже задан в .env.example.
 # Для реальных ответов модели добавьте OPENROUTER_API_KEY в .env.
 uv run --frozen --env-file .env iacpaas-web --host 127.0.0.1 --port 8080
