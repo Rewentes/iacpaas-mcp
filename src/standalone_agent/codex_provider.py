@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .conversation import ConversationError
+from .runtime import _private_fd
 
 _FRAME = 2 * 1024 * 1024
 _TIMEOUT = 30
@@ -534,8 +535,9 @@ class CodexPool:
             "node_repl_disabled": True,
         }
         path = self._home(owner_id) / "safe-models.json"
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
-        with os.fdopen(os.open(path, flags, 0o600), "w") as stream:
+        with os.fdopen(
+            _private_fd(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC), "w"
+        ) as stream:
             json.dump({"models": [metadata]}, stream)
         path.chmod(0o600)
         return path

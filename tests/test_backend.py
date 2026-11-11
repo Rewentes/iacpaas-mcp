@@ -8,7 +8,7 @@ def test_checked_in_reference_counts_match_actual_fixture():
     from iacpaas_mcp.domain import GraphService
 
     reference = json.loads(
-        (Path(__file__).parents[1] / "fixtures/mock-reference-counts.json").read_text()
+        (Path(__file__).parents[1] / "fixtures/mock-reference-counts.json").read_text(encoding="utf-8")
     )
     service = GraphService()
     for arguments, key in [({}, "whole_resource"), ({"root": "root"}, "reachable_from_root")]:
