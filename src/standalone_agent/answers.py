@@ -22,7 +22,7 @@ def numbers(text):
     text = re.sub(r"(?m)^\s*(?:\*\*|__)?\d+(?:\*\*|__)?[.)](?:\*\*|__)?\s+", "", text)
     return {
         Decimal(value.replace(",", "."))
-        for value in re.findall(r"(?<![\w])[+-]?\d+(?:[.,]\d+)?", text)
+        for value in re.findall(r"(?<![\w])[+-]?\d+(?:[.,]\d+)?(?:[eE][+-]?\d+)?", text)
     }
 
 
@@ -166,12 +166,11 @@ def authored_answer(decision, registry, provenance):
         warnings.extend(context.get("warnings", []))
         if context.get("complete") is False:
             warnings.append("Прочитана только часть данных в указанной области запроса.")
+    warnings = list(dict.fromkeys(
+        visible_text(w) for w in warnings if isinstance(w, str) and visible_text(w)
+    ))
     if any(provenance[key].get("backend") == "mock" for key in ids):
-        warnings.append("Использованы демонстрационные данные MOCK.")
-    if warnings:
-        text += "\n\n" + "\n".join(
-            dict.fromkeys(visible_text(w) for w in warnings if isinstance(w, str))
-        )
+        text += "\n\nИспользованы демонстрационные данные MOCK."
     return {
         "answer": text,
         "sources": sources,
@@ -180,5 +179,6 @@ def authored_answer(decision, registry, provenance):
             "reason": "Ссылки найдены в результатах MCP, числа сопоставлены с выбранными данными. Это не полная проверка смысла, единиц или вывода.",
             "checks": {"source_references": True, "numeric_values": not unmatched_numbers},
             "numeric_check": numeric_check,
+            "warnings": warnings,
         },
     }

@@ -77,6 +77,8 @@ def test_transports_preserve_length_failure_without_retry(tmp_path, monkeypatch,
         if adapter == "cli":
 
             def respond(request):
+                if request.method == "GET":
+                    return httpx.Response(200, json={"data": []})
                 calls.append(request)
                 return httpx.Response(200, json=response)
 
@@ -91,6 +93,9 @@ def test_transports_preserve_length_failure_without_retry(tmp_path, monkeypatch,
                 calls.append(kwargs)
                 return response
 
+            async def sampling(model):
+                return {}
+            monkeypatch.setattr(model_settings, "openrouter_sampling_options", sampling)
             monkeypatch.setattr(model_settings, "api_request", request)
             monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
             settings = ModelSettings(Storage(tmp_path / "settings.db"))

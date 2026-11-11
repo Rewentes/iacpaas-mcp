@@ -23,8 +23,21 @@ def reasoning_options(metadata):
     return {}
 
 
+def sampling_options(metadata):
+    """Reduce sampling variance only where the selected model declares support."""
+    supported = metadata.get("supported_parameters") or []
+    options = {}
+    if "temperature" in supported:
+        options["temperature"] = 0
+    if "seed" in supported:
+        options["seed"] = 42
+    if options:
+        options["provider"] = {"require_parameters": True}
+    return options
+
+
 def review_options(metadata):
-    options = reasoning_options(metadata)
+    options = {**sampling_options(metadata), **reasoning_options(metadata)}
     supported = metadata.get("supported_parameters") or []
     if "structured_outputs" in supported:
         options["response_format"] = {"type": "json_schema", "json_schema": {
@@ -36,7 +49,7 @@ def review_options(metadata):
     return options
 
 
-async def openrouter_review_options(model, client=None):
+async def _model_metadata(model, client=None):
     cached = _CACHE.get(model)
     if cached and time.monotonic() - cached[0] < 900:
         return cached[1]
@@ -47,17 +60,25 @@ async def openrouter_review_options(model, client=None):
         metadata = next(
             (item for item in response.json().get("data", []) if item.get("id") == model), {}
         )
-        return review_options(metadata)
+        return metadata
 
     try:
         if client is not None:
-            options = await fetch(client)
+            metadata = await fetch(client)
         else:
             async with httpx.AsyncClient(follow_redirects=False) as request_client:
-                options = await fetch(request_client)
+                metadata = await fetch(request_client)
     except (httpx.HTTPError, ValueError, TypeError, AttributeError):
         return {}
     if len(_CACHE) >= 128:
         _CACHE.pop(next(iter(_CACHE)))
-    _CACHE[model] = (time.monotonic(), options)
-    return options
+    _CACHE[model] = (time.monotonic(), metadata)
+    return metadata
+
+
+async def openrouter_sampling_options(model, client=None):
+    return sampling_options(await _model_metadata(model, client))
+
+
+async def openrouter_review_options(model, client=None):
+    return review_options(await _model_metadata(model, client))

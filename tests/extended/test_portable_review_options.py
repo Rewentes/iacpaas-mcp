@@ -51,6 +51,7 @@ def test_cli_transport_sets_reasoning_only_for_the_review(monkeypatch):
                     "data": [
                         {
                             "id": "test-review-model",
+                            "supported_parameters": ["temperature", "seed"],
                             "reasoning": {"supported_efforts": ["high", "low"]},
                         }
                     ]
@@ -70,6 +71,8 @@ def test_cli_transport_sets_reasoning_only_for_the_review(monkeypatch):
 
     asyncio.run(scenario())
     posts = [json.loads(call.content) for call in calls if call.method == "POST"]
+    assert all(p["temperature"] == 0 and p["seed"] == 42 for p in posts)
+    assert len([c for c in calls if c.method == "GET"]) == 1
     assert "reasoning" not in posts[0]
     assert posts[1]["reasoning"] == {"effort": "low"}
 
@@ -92,6 +95,9 @@ def test_web_transport_passes_the_same_review_controls(tmp_path, monkeypatch):
         requests.append(kwargs["payload"])
         return {"choices": [{"message": {"role": "assistant", "content": "Ответ"}}]}
 
+    async def sampling(model):
+        return {"temperature": 0, "seed": 42}
+    monkeypatch.setattr(model_settings, "openrouter_sampling_options", sampling)
     monkeypatch.setattr(model_settings, "openrouter_review_options", options)
     monkeypatch.setattr(model_settings, "api_request", api)
 
@@ -100,6 +106,7 @@ def test_web_transport_passes_the_same_review_controls(tmp_path, monkeypatch):
         await settings.provider(profile, review=True)([{"role": "user", "content": "Сверка"}], [])
 
     asyncio.run(scenario())
+    assert requests[0]["temperature"] == 0 and requests[0]["seed"] == 42
     assert "reasoning" not in requests[0] and requests[1]["reasoning"] == {"effort": "low"}
 
 

@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .completion import completion_message
-from .review_options import openrouter_review_options
+from .review_options import openrouter_review_options, openrouter_sampling_options
 from .runtime import Decision, ToolCall
 
 
@@ -102,8 +102,9 @@ class OpenAIModel:
         }
         if tools:
             payload.update(tools=tools, tool_choice="auto")
-        if review and urlparse(self.url).hostname == "openrouter.ai":
-            payload.update(await openrouter_review_options(self.model, self.client))
+        if urlparse(self.url).hostname == "openrouter.ai":
+            options = openrouter_review_options if review else openrouter_sampling_options
+            payload.update(await options(self.model, self.client))
 
         async def request(client):
             response = await client.post(

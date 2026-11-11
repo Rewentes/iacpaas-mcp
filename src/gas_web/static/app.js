@@ -202,6 +202,13 @@ function renderMessage(message) {
     if (status !== 'not_applicable') article.append(element('span', labels[status] || 'Проверка не указана', `verification ${status}`));
     if (verification?.reason && status !== 'not_applicable') article.append(element('p', verification.reason, 'verification-reason'));
   }
+  const sourceWarnings = message.verification?.warnings;
+  if (assistant && Array.isArray(sourceWarnings) && sourceWarnings.length) {
+    const details = element('details', undefined, 'answer-review');
+    details.append(element('summary', 'Сведения об источниках'));
+    for (const warning of sourceWarnings) details.append(element('p', warning));
+    article.append(details);
+  }
   const review = message.verification?.review;
   const validation = message.verification?.validation;
   if (assistant && validation?.numeric_check) {

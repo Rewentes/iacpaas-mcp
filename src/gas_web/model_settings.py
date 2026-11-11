@@ -11,7 +11,7 @@ import httpx
 
 from standalone_agent.completion import completion_message
 from standalone_agent.errors import ConversationError
-from standalone_agent.review_options import openrouter_review_options
+from standalone_agent.review_options import openrouter_review_options, openrouter_sampling_options
 
 PROVIDERS = [
     {"id": "openrouter", "name": "OpenRouter", "auth_type": "api_key"},
@@ -240,8 +240,9 @@ class ModelSettings:
 
         async def complete(messages, tools):
             payload = {"model": profile.model, "messages": messages}
-            if review and profile.provider == "openrouter":
-                payload.update(await openrouter_review_options(profile.model))
+            if profile.provider == "openrouter":
+                options = openrouter_review_options if review else openrouter_sampling_options
+                payload.update(await options(profile.model))
             payload["max_completion_tokens" if profile.provider == "openai" else "max_tokens"] = (
                 output_tokens
             )

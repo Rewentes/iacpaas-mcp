@@ -11,8 +11,14 @@ from .citations import strip_citations
 from .cli import connect
 from .completion import completion_message
 from .errors import ConversationError
-from .prompts import ANSWER_FORMAT_NOTE, SUMMARY_CONTEXT_NOTE, summary_prompt, system_prompt
-from .review_options import openrouter_review_options
+from .prompts import (
+    ANSWER_EVIDENCE_NOTE,
+    ANSWER_FORMAT_NOTE,
+    SUMMARY_CONTEXT_NOTE,
+    summary_prompt,
+    system_prompt,
+)
+from .review_options import openrouter_review_options, openrouter_sampling_options
 from .runtime import SECRET, WRITES, redact
 from .verification import normative_issues, review_messages, validate_review
 
@@ -162,8 +168,8 @@ class ConversationAgent:
         payload = {"model": self.model, "messages": messages, "max_tokens": self.output_reserve}
         if tools:
             payload.update(tools=tools, tool_choice="auto")
-        if review:
-            payload.update(await openrouter_review_options(self.model, self.client))
+        options = openrouter_review_options if review else openrouter_sampling_options
+        payload.update(await options(self.model, self.client))
 
         async def request(client):
             response = await client.post(
@@ -539,44 +545,47 @@ class ConversationAgent:
                                 if isinstance(decision, dict) and decision.get("type") == "answer"
                                 else None
                             )
-                            break
                         except (ValueError, TypeError) as exc:
-                            diagnostic = (
-                                str(exc)
-                                if str(exc)
-                                in {
-                                    "empty_answer",
-                                    "broken_answer_envelope",
-                                    "invalid_answer_envelope",
-                                    "invalid_answer_text",
-                                    "unknown_answer_envelope",
-                                    "invalid_answer",
-                                    "invalid_source_reference",
-                                    "invalid_source_range",
-                                    "source_reference_limit",
-                                }
-                                else "answer_parse"
-                            )
+                            diagnostic = str(exc) if str(exc) in {
+                                "empty_answer", "broken_answer_envelope", "invalid_answer_envelope",
+                                "invalid_answer_text", "unknown_answer_envelope", "invalid_answer",
+                                "invalid_source_reference", "invalid_source_range", "source_reference_limit",
+                            } else "answer_parse"
                             if attempt or not visible_text(response.get("content")):
                                 raise ConversationError(
-                                    "Некорректный формат ответа модели.",
-                                    "model_output_error",
+                                    "Некорректный формат ответа модели.", "model_output_error",
                                     diagnostic=diagnostic,
                                 ) from None
-                            await emit(
-                                "status", "Исправляю оформление ответа по уже полученным данным."
+                            repair_message = "Исправляю оформление ответа по уже полученным данным."
+                            repair_context = [
+                                *dialogue, {"role": "system", "content": ANSWER_FORMAT_NOTE},
+                            ]
+                        else:
+                            validation = (rendered or {}).get("verification", {}).get("validation", {})
+                            if attempt or validation.get("code") != "quantity_mismatch":
+                                break
+                            repair_message = "Сверка нашла неподтверждённые числа. Уточняю ответ по источникам."
+                            # Reuse complete current documents, not past dialogue or
+                            # invented numeric replacements. The next pass is checked again.
+                            _, evidence_request = review_messages(
+                                message, validation["candidate_text"], rendered["sources"],
+                                provenance, [],
                             )
-                            # One format correction within this turn. No tool replay,
-                            # new user message, unverified publication or private draft.
-                            response = await self._complete(
-                                [*dialogue, {"role": "system", "content": ANSWER_FORMAT_NOTE}], []
+                            packet = json.loads(evidence_request[-1]["content"])
+                            packet["numeric_check"] = validation["numeric_check"]
+                            repair_context = [
+                                {"role": "system", "content": system_prompt(0) + "\n" + ANSWER_EVIDENCE_NOTE},
+                                {"role": "user", "content": encoded(packet)},
+                            ]
+                        # One correction total per turn, with no additional MCP calls.
+                        # Provider/context failures propagate; they are not format errors.
+                        await emit("status", repair_message)
+                        response = await self._complete(repair_context, [])
+                        if response.get("tool_calls"):
+                            raise ConversationError(
+                                "При исправлении ответа модель вызвала инструмент.",
+                                "model_output_error", diagnostic="answer_repair_tool_call",
                             )
-                            if response.get("tool_calls"):
-                                raise ConversationError(
-                                    "При исправлении формата модель вызвала инструмент.",
-                                    "model_output_error",
-                                    diagnostic="format_repair_tool_call",
-                                )
                     if rendered is not None:
                         if rendered["verification"]["status"] == "grounded":
                             rendered = await self._review_answer(
