@@ -125,7 +125,11 @@ async def test_real_http_cli_session_and_graceful_shutdown():
     finally:
         process.terminate()
         stdout, stderr = process.communicate(timeout=10)
-    assert process.returncode in (0, -15), stderr
-    assert "Application shutdown complete" in stderr
+    if sys.platform == "win32":
+        # TerminateProcess on Windows has no SIGTERM and does not run graceful shutdown.
+        assert process.returncode in (0, 1), stderr
+    else:
+        assert process.returncode in (0, -15), stderr
+        assert "Application shutdown complete" in stderr
     assert not stdout
     assert "http-session-test" not in stderr

@@ -77,7 +77,7 @@ async def test_real_stdio_discovery_and_linked_calls(tmp_path):
         result = await Agent(session, DemoModel(), trace=Trace(tmp_path / "stdio.jsonl")).run(
             "найди университет и покажи метаданные"
         )
-    records = [json.loads(line) for line in (tmp_path / "stdio.jsonl").read_text().splitlines()]
+    records = [json.loads(line) for line in (tmp_path / "stdio.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [r["name"] for r in records] == ["list_inforesources", "get_inforesource"]
     assert records[1]["args"]["path"] == records[0]["result"]["data"]["resources"][0]["path"]
     assert "mock" in result.lower()
@@ -88,15 +88,15 @@ def test_vscode_configs_and_custom_agent_are_coherent():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
-    config = json.loads((root / ".vscode/mcp.json").read_text())
+    config = json.loads((root / ".vscode/mcp.json").read_text(encoding="utf-8"))
     assert config["servers"]["iacpaas"]["args"] == ["run", "--frozen", "iacpaas-mcp"]
     assert config["servers"]["iacpaas"]["cwd"] == "${workspaceFolder}"
-    config = json.loads((root / ".vscode/mcp.http.example.json").read_text())
+    config = json.loads((root / ".vscode/mcp.http.example.json").read_text(encoding="utf-8"))
     assert config["inputs"][0]["password"] is True
     assert config["servers"]["iacpaas"]["headers"]["Authorization"].startswith(
         "Bearer \u0024{input:"
     )
-    assert "tools: ['iacpaas/*']" in (root / ".github/agents/iacpaas.agent.md").read_text()
+    assert "tools: ['iacpaas/*']" in (root / ".github/agents/iacpaas.agent.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio
@@ -137,7 +137,7 @@ async def test_real_http_discovery_and_count(monkeypatch, tmp_path):
             result = await Agent(session, DemoModel(), trace=Trace(tmp_path / "http.jsonl")).run(
                 "посчитай граф /demo/university"
             )
-        events = [json.loads(line) for line in (tmp_path / "http.jsonl").read_text().splitlines()]
+        events = [json.loads(line) for line in (tmp_path / "http.jsonl").read_text(encoding="utf-8").splitlines()]
         assert [e["name"] for e in events] == ["list_inforesources", "count_graph"]
         assert events[-1]["result"]["data"]["vertices"] == 5
         assert events[-1]["result"]["data"]["edges"] == 6
@@ -190,7 +190,7 @@ async def test_real_stdio_wrong_path_recovery(tmp_path):
         result = await Agent(session, DemoModel(), trace=Trace(path)).run(
             "покажи метаданные /missing/resource"
         )
-    records = [json.loads(line) for line in path.read_text().splitlines()]
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert len(records) == 3
     assert records[1]["result"]["code"] == "not_found"
     assert records[1]["status"] == "error"
