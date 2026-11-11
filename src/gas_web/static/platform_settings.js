@@ -27,7 +27,7 @@ export function initPlatformSettings(api) {
     busy = true; controls(); status.textContent = 'Сохраняем вход IACPaaS…';
     try { render(await api.savePlatformSettings({username:username.value, password:password.value, clear_password:clear.checked})); }
     catch (error) { status.textContent = error.message; }
-    finally { password.value = ''; busy = false; controls(); }
+    finally { busy = false; controls(); }
   });
   $('platform-test').addEventListener('click', async () => {
     if (busy) return;
