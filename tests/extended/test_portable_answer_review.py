@@ -472,3 +472,24 @@ def test_warning_alone_is_not_a_useful_partial_data_answer():
     )
     assert result["verification"]["status"] == "rejected"
     assert warning not in result["answer"]
+
+
+def test_supported_but_out_of_scope_answer_gets_question_feedback_not_false_source_failure():
+    async def reviewer(messages, tools):
+        payload = json.loads(messages[-1]['content'])
+        return report_for(payload['blocks'], relevant=False)
+
+    async def emit(event, text):
+        pass
+
+    draft = authored_answer(
+        {'type': 'answer', 'intent': 'data', 'text': GOOD, 'source_ids': ['e1']},
+        {'e1': SOURCE}, PROVENANCE,
+    )
+    result = asyncio.run(ConversationAgent(reviewer=reviewer)._review_answer(
+        'Объясни метод сравнения, без числовых примеров', draft, PROVENANCE, [], emit,
+    ))
+    assert result['verification']['status'] == 'rejected'
+    assert 'не соответствует вопросу' in result['verification']['reason']
+    assert 'не подтверждена источниками' not in result['verification']['reason']
+    assert all(b['status'] == 'supported' for b in result['verification']['review']['blocks'])

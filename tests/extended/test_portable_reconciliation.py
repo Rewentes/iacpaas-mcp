@@ -9,6 +9,7 @@ from test_portable_authored_conversation import accepted_review, gas_session
 
 from gas_web.app import create_app
 from standalone_agent.conversation import ConversationAgent
+from standalone_agent.prompts import ANSWER_REVISION_NOTE
 
 
 def read(call_id="read"):
@@ -75,6 +76,7 @@ def test_semantic_feedback_and_prior_answer_reach_writer_then_reviewer_reconside
         if len(generated) == 2:
             source = normative_id(messages[-1])
             return {"content": f"Аргон подходит для любой задачи. [{source}]"}
+        assert ANSWER_REVISION_NOTE in messages[0]["content"]
         payload = json.loads(messages[-1]["content"])
         assert payload["question"] == "А какая у него чистота?"
         assert payload["dialogue_context"][-1]["text"].strip() == topic
@@ -157,6 +159,7 @@ def test_bound_feedback_can_request_another_read_but_keeps_original_tool_budget(
             assert tools
             return read("second")
         assert tools == []
+        assert ANSWER_REVISION_NOTE in messages[0]["content"]
         source = normative_id(messages[-1])
         return {"content": f"Аргон: ≥ 99.993 %. [{source}]"}
 
