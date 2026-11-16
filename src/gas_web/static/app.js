@@ -3,6 +3,8 @@ import {renderMarkdown} from './markdown.js';
 import {pickStarters} from './starter_questions.js';
 import {initPlatformSettings} from './platform_settings.js';
 import {initSettings} from './settings.js';
+import {initConversationRename} from './conversation_titles.js';
+import {initConversationMenu} from './conversation_menu.js';
 import {initRingUI, enhanceButton} from './ring.js';
 
 initRingUI();
@@ -12,6 +14,26 @@ const $ = id => document.getElementById(id);
 const state = {ready: false, busy: false, conversation: null, items: [], messages: [], before: null, attempts: new Map(), drafts: new Map(), editing: null, edits: new Map(), archive: false};
 let retryAction = null;
 let starterConversation;
+const renameDialog = initConversationRename({
+  api, announce,
+  onRenamed(conversation) {
+    state.items = state.items.map(item => item.id === conversation.id ? {...item, ...conversation} : item);
+    if (state.conversation?.id === conversation.id) state.conversation = {...state.conversation, ...conversation};
+    renderConversations();
+  },
+  onClose(id) {
+    [...$('conversations').querySelectorAll('button.conversation-item')]
+      .find(button => button.dataset.conversationId === id)?.focus({preventScroll:true});
+  },
+});
+const conversationMenu = initConversationMenu({
+  canOpen: () => state.ready && !state.busy,
+  createButton: label => element('button', label),
+  onAction(item, action) {
+    if (action === 'rename') renameDialog.open(item);
+    else manageConversation(item, action);
+  },
+});
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -39,6 +61,7 @@ function clearError() {
 }
 function controls() {
   const locked = !state.ready || state.busy;
+  if (locked) conversationMenu.close();
   const archived = !!state.conversation?.archived;
   $('archive-toggle').disabled = locked;
   $('new-chat').disabled = locked;
@@ -58,11 +81,13 @@ function controls() {
   resizePrompt();
 }
 function renderConversations() {
+  conversationMenu.close();
   const list = element('ul');
   for (const item of state.items.filter(item => !!item.archived === state.archive)) {
     const li = element('li');
     const button = element('button', undefined, 'conversation-item');
     button.type = 'button';
+    button.dataset.conversationId = item.id;
     button.title = item.title;
     button.append(element('span', item.title || 'Без названия', 'conversation-title'));
     const date = element('time', dateLabel(item.updated_at));
@@ -70,23 +95,32 @@ function renderConversations() {
     button.append(date);
     if (item.id === state.conversation?.id) button.setAttribute('aria-current', 'page');
     button.addEventListener('click', () => openConversation(item.id));
-    const menu = element('details', undefined, 'conversation-menu');
-    const trigger = element('summary', '⋯');
+    const menu = element('div', undefined, 'conversation-menu');
+    const trigger = element('button', '⋯', 'conversation-menu-trigger');
+    trigger.type = 'button';
     trigger.setAttribute('aria-label', `Действия: ${item.title}`);
-    const actions = element('div', undefined, 'conversation-menu-items');
-    for (const [action, label] of [[item.archived ? 'restore' : 'archive', item.archived ? 'Восстановить' : 'В архив'], ['delete', 'Удалить']]) {
-      const control = element('button', label);
-      control.type = 'button';
-      if (action === 'delete') control.classList.add('danger');
-      control.addEventListener('click', () => { menu.open = false; manageConversation(item, action); });
-      actions.append(control);
-    }
-    menu.append(trigger, actions);
+    trigger.setAttribute('aria-haspopup', 'menu');
+    trigger.setAttribute('aria-controls', 'conversation-actions-menu');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.addEventListener('click', () => conversationMenu.open(item, {anchor:trigger, toggle:true}));
+    li.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      conversationMenu.open(item, {anchor:trigger, focusTarget:button, x:event.clientX, y:event.clientY});
+    });
+    button.addEventListener('keydown', event => {
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        event.preventDefault();
+        conversationMenu.open(item, {anchor:trigger, focusTarget:button});
+      }
+    });
+    menu.append(trigger);
     li.append(button, menu); list.append(li);
   }
   $('conversations').replaceChildren(list.children.length ? list : element('p', state.archive ? 'Архив пуст.' : 'Здесь появятся ваши диалоги.', 'muted'));
   $('archive-toggle').textContent = state.archive ? '← К диалогам' : 'Архив';
   $('conversation-section').textContent = state.archive ? 'Архив' : 'Диалоги';
+  $('chat-title').textContent = state.conversation?.title || 'Новый диалог';
   controls();
 }
 async function manageConversation(item, action) {
@@ -95,6 +129,7 @@ async function manageConversation(item, action) {
     $('delete-title').textContent = `Удалить «${item.title}»?`;
     const confirmed = await new Promise(resolve => {
       const dialog = $('delete-dialog');
+      dialog.returnValue = 'cancel';
       dialog.addEventListener('close', () => resolve(dialog.returnValue === 'delete'), {once:true});
       dialog.showModal();
     });
@@ -460,7 +495,7 @@ async function submitMessage(event) {
   try {
     if (!state.conversation) {
       announce('Создаём диалог…');
-      state.conversation = await api.create(content.slice(0, 70));
+      state.conversation = await api.create('Новый диалог');
       state.items.unshift(state.conversation);
       renderConversations();
     }
@@ -497,6 +532,7 @@ async function sendAttempt(attempt) {
     state.messages.push(result.user_message, result.assistant_message);
     state.attempts.delete(state.conversation.id);
     $('prompt').value = '';
+    if (result.conversation?.id === state.conversation.id) Object.assign(state.conversation, result.conversation);
     state.conversation.updated_at = result.assistant_message.created_at;
     state.items = [state.conversation, ...state.items.filter(item => item.id !== state.conversation.id)];
     renderMessages(true); renderContext(result.context); renderConversations(); if (follow) scrollToLatest(true); else updateScrollButton();

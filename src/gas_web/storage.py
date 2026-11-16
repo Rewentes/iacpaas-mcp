@@ -10,6 +10,8 @@ from pathlib import Path
 
 from standalone_agent.runtime import redact
 
+from .titles import is_default_title, topic_title
+
 
 class Conflict(Exception):
     """An idempotency key was reused with different content."""
@@ -54,6 +56,21 @@ class Storage:
                 PRIMARY KEY(conversation_id,request_id))""")
             if "archived" not in {row[1] for row in db.execute("PRAGMA table_info(conversations)")}:
                 db.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+            if "title_auto" not in {row[1] for row in db.execute("PRAGMA table_info(conversations)")}:
+                db.execute("ALTER TABLE conversations ADD COLUMN title_auto INTEGER NOT NULL DEFAULT 0")
+                for row in db.execute("SELECT id,title FROM conversations").fetchall():
+                    if is_default_title(row["title"]):
+                        db.execute("UPDATE conversations SET title_auto=1 WHERE id=?", (row["id"],))
+            # Upgrade existing untitled conversations without changing their activity order.
+            for row in db.execute("SELECT id,title FROM conversations WHERE title_auto=1").fetchall():
+                if not is_default_title(row["title"]):
+                    continue
+                first = db.execute(
+                    "SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY seq LIMIT 1",
+                    (row["id"],),
+                ).fetchone()
+                if first:
+                    db.execute("UPDATE conversations SET title=? WHERE id=?", (topic_title(first["content"]), row["id"]))
         self.path.chmod(0o600)
 
     @contextmanager
@@ -97,8 +114,8 @@ class Storage:
         }
         with self.connect() as db:
             db.execute(
-                "INSERT INTO conversations (id,owner_id,title,created_at,updated_at) VALUES (?, ?, ?, ?, ?)",
-                (item["id"], owner_id, title, now, now),
+                "INSERT INTO conversations (id,owner_id,title,created_at,updated_at,title_auto) VALUES (?, ?, ?, ?, ?, ?)",
+                (item["id"], owner_id, title, now, now, int(is_default_title(title))),
             )
         return item
 
@@ -196,7 +213,7 @@ class Storage:
     def start_turn(self, conversation_id, request_id, content):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT archived FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+            row = db.execute("SELECT archived,title_auto FROM conversations WHERE id=?", (conversation_id,)).fetchone()
             if row is None or row["archived"]:
                 raise Conflict("Диалог удалён или находится в архиве. Восстановите его перед отправкой.")
             previous = db.execute(
@@ -215,6 +232,10 @@ class Storage:
                 (conversation_id, "pending"),
             ).fetchone():
                 raise Conflict("Conversation is busy; wait for the pending request.")
+            if row["title_auto"] and not db.execute(
+                "SELECT 1 FROM messages WHERE conversation_id=? AND role='user' LIMIT 1", (conversation_id,)
+            ).fetchone():
+                db.execute("UPDATE conversations SET title=? WHERE id=?", (topic_title(content), conversation_id))
             message = self._insert_message(db, conversation_id, "user", content, "pending")
             db.execute(
                 "INSERT INTO requests VALUES (?,?,?,?,?,?,?)",
@@ -321,6 +342,9 @@ class Storage:
                     (conversation_id, request_id, assistant["id"], json.dumps(redact(event))),
                 )
             response = {
+                "conversation": dict(db.execute(
+                    "SELECT id,title,created_at,updated_at,archived FROM conversations WHERE id=?", (conversation_id,)
+                ).fetchone()),
                 "user_message": dict(user_message, state="complete"),
                 "assistant_message": assistant,
                 "context": context,
@@ -339,7 +363,7 @@ class Storage:
             ).fetchone()
             return dict(row) if row else None
 
-    def manage_conversation(self, owner_id, conversation_id, action):
+    def manage_conversation(self, owner_id, conversation_id, action, title=None):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT id FROM conversations WHERE id=? AND owner_id=?", (conversation_id, owner_id)).fetchone()
@@ -347,7 +371,11 @@ class Storage:
                 return False
             if db.execute("SELECT 1 FROM requests WHERE conversation_id=? AND state='pending'", (conversation_id,)).fetchone():
                 raise Conflict("Дождитесь завершения запроса перед изменением диалога.")
-            if action in ("archive", "restore"):
+            if action == "rename":
+                if not isinstance(title, str) or not title.strip() or len(title) > 200:
+                    raise ValueError("Invalid conversation title")
+                db.execute("UPDATE conversations SET title=?,title_auto=0 WHERE id=?", (" ".join(title.split()), conversation_id))
+            elif action in ("archive", "restore"):
                 db.execute("UPDATE conversations SET archived=? WHERE id=?", (int(action == "archive"), conversation_id))
             elif action == "delete":
                 # A branch keeps its own copied messages; remove only links to this conversation.
