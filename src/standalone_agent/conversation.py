@@ -13,6 +13,7 @@ from .completion import completion_message
 from .errors import ConversationError
 from .prompts import (
     ANSWER_FORMAT_NOTE,
+    ANSWER_REVISION_NOTE,
     SUMMARY_CONTEXT_NOTE,
     summary_prompt,
     system_prompt,
@@ -454,7 +455,11 @@ class ConversationAgent:
             }
             verification.update(
                 status="rejected" if review["status"] == "rejected" else "review_unavailable",
-                reason="Часть утверждений ответа не подтверждена источниками."
+                reason=(
+                    "Ответ не соответствует вопросу или запрошенному объёму сведений."
+                    if review.get("answers_question") is False
+                    else "Часть утверждений ответа не подтверждена источниками."
+                )
                 if review["status"] == "rejected"
                 else review["reason"],
             )
@@ -703,6 +708,8 @@ class ConversationAgent:
             for step in range(self.max_calls + self.max_answer_revisions + 1):
                 remaining_calls = self.max_calls - len(events)
                 dialogue[0]["content"] = system_prompt(remaining_calls)
+                if reconciliation.revisions:
+                    dialogue[0]["content"] += "\n" + ANSWER_REVISION_NOTE
                 available_tools = tools if remaining_calls else []
                 compactions += self._compact_tool_context(dialogue, available_tools)
                 response = await self._complete(dialogue, available_tools)
