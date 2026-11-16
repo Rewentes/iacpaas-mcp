@@ -301,15 +301,22 @@ def create_app(*, db_path=None, agent=None, bind_host=None, trusted_hosts=None):
         owner = authenticate(request)
         body = await json_body(request)
         action = body.get("action")
-        if action not in ("archive", "restore", "delete") or set(body) != {"action"}:
+        expected = {"action", "title"} if action == "rename" else {"action"}
+        title = body.get("title")
+        if action not in ("archive", "restore", "delete", "rename") or set(body) != expected:
             raise APIError(400, {"code": "invalid_request", "message": "Неизвестное действие.", "retryable": False})
+        if action == "rename" and (not isinstance(title, str) or not title.strip() or len(title) > 200):
+            raise APIError(400, {"code": "invalid_request", "message": "Введите название от 1 до 200 символов.", "retryable": False})
         try:
-            found = store.manage_conversation(owner["id"], request.path_params["conversation_id"], action)
+            found = store.manage_conversation(owner["id"], request.path_params["conversation_id"], action, title)
         except Conflict as exc:
             raise APIError(409, {"code": "conflict", "message": str(exc), "retryable": False}) from None
         if not found:
             raise APIError(404, {"code": "not_found", "message": "Диалог не найден.", "retryable": False})
-        return JSONResponse({"ok": True, "action": action})
+        response = {"ok": True, "action": action}
+        if action == "rename":
+            response["conversation"] = store.conversation(owner["id"], request.path_params["conversation_id"])
+        return JSONResponse(response)
 
     async def revisions(request):
         owner = authenticate(request)
@@ -551,6 +558,8 @@ def create_app(*, db_path=None, agent=None, bind_host=None, trusted_hosts=None):
             "api.js",
             "settings.js",
             "platform_settings.js",
+            "conversation_titles.js",
+            "conversation_menu.js",
             "styles.css",
             "theme.js",
             "ring.js",

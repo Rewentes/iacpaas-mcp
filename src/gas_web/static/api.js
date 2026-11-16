@@ -104,6 +104,7 @@ export class Api {
   codexLogin() { return this.post('/codex/login/start', {}); }
   codexLogout() { return this.post('/codex/logout', {}); }
   manage(id, action) { return this.post(`/conversations/${encodeURIComponent(id)}/manage`, {action}); }
+  rename(id, title) { return this.post(`/conversations/${encodeURIComponent(id)}/manage`, {action:'rename', title}); }
   platformSettings() { return this.request('/platform/settings'); }
   savePlatformSettings(body) { return this.post('/platform/settings', body); }
   testPlatformSettings() { return this.post('/platform/settings/test', {}); }

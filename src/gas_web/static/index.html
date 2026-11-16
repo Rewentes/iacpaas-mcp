@@ -108,6 +108,15 @@
     </form>
   </dialog>
   <dialog id="delete-dialog" class="delete-dialog" aria-labelledby="delete-title"><form method="dialog"><h2 id="delete-title">Удалить диалог?</h2><p>Сообщения и рабочий контекст этого диалога будут удалены. Отменить удаление нельзя.</p><div class="settings-actions"><button value="cancel" autofocus>Отмена</button><button value="delete" class="danger">Удалить</button></div></form></dialog>
+  <dialog id="rename-dialog" class="rename-dialog" aria-labelledby="rename-title">
+    <form id="rename-form">
+      <h2 id="rename-title">Переименовать диалог</h2>
+      <label for="rename-name">Название</label>
+      <input id="rename-name" name="title" type="text" maxlength="200" required autocomplete="off" aria-describedby="rename-error" autofocus>
+      <p id="rename-error" role="alert"></p>
+      <div class="settings-actions"><button id="rename-cancel" type="button">Отмена</button><button id="rename-save" type="submit">Сохранить</button></div>
+    </form>
+  </dialog>
   <noscript>Для работы с диалогами включите JavaScript.</noscript>
 </body>
 </html>
