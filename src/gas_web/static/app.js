@@ -209,6 +209,15 @@ function renderMessage(message) {
     for (const warning of sourceWarnings) details.append(element('p', warning));
     article.append(details);
   }
+  const reconciliation = message.verification?.reconciliation;
+  if (assistant && reconciliation?.revisions) {
+    const details = element('details', undefined, 'answer-review');
+    details.append(element('summary', `Согласование ответа · ${reconciliation.revisions}`));
+    for (const round of reconciliation.rounds || []) {
+      details.append(element('p', `${round.revision === 0 ? 'Первый вариант' : `Исправление ${round.revision}`}: ${round.reason}`));
+    }
+    article.append(details);
+  }
   const review = message.verification?.review;
   const validation = message.verification?.validation;
   if (assistant && validation?.numeric_check) {
