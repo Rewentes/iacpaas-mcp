@@ -388,7 +388,9 @@ def test_legacy_id_selection_cannot_bypass_semantic_review():
             "Сравни аргон и гелий", []
         )
     )
-    assert len(calls) == 3
+    checks = [request for request in calls if request[0]["content"].startswith("Проверь ответ помощника")]
+    assert len(checks) == 3  # Initial reply and both corrections are independently checked.
+    assert result["verification"]["reconciliation"]["revisions"] == 2
     assert result["verification"]["review"]["answers_question"] is False
     assert result["verification"]["status"] == "rejected"
     assert "99.993" not in result["answer"]

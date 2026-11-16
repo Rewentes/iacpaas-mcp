@@ -12,12 +12,12 @@ from .cli import connect
 from .completion import completion_message
 from .errors import ConversationError
 from .prompts import (
-    ANSWER_EVIDENCE_NOTE,
     ANSWER_FORMAT_NOTE,
     SUMMARY_CONTEXT_NOTE,
     summary_prompt,
     system_prompt,
 )
+from .reconciliation import ReconciliationState, revision_messages
 from .review_options import openrouter_review_options, openrouter_sampling_options
 from .runtime import SECRET, WRITES, redact
 from .verification import normative_issues, review_messages, validate_review
@@ -117,6 +117,7 @@ class ConversationAgent:
         tool_result_bytes=None,
         summary_bytes=None,
         reviewer=None,
+        max_answer_revisions=None,
     ):
         self.api_key = os.environ.get("OPENROUTER_API_KEY", "")
         self.model = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-v4.1-flash")
@@ -157,6 +158,13 @@ class ConversationAgent:
         if type(max_calls) is not int or not 1 <= max_calls <= 12:
             raise ValueError("max_calls must be 1..12")
         self.max_calls = max_calls
+        self.max_answer_revisions = (
+            int(os.environ.get("AGENT_MAX_ANSWER_REVISIONS", "2"))
+            if max_answer_revisions is None
+            else max_answer_revisions
+        )
+        if type(self.max_answer_revisions) is not int or not 0 <= self.max_answer_revisions <= 3:
+            raise ValueError("max_answer_revisions must be 0..3")
 
     async def _complete(self, messages, tools, *, review=False):
         if estimate(messages, tools) + self.output_reserve > self.context_limit:
@@ -214,15 +222,25 @@ class ConversationAgent:
         # Drop only complete older exchanges, preserving the latest result and
         # matching every tool_call_id. Persistent events/evidence remain intact.
         index = 1
-        while estimate(dialogue, tools) + self.output_reserve > self.context_limit and index < len(dialogue) - 1:
+        while (
+            estimate(dialogue, tools) + self.output_reserve > self.context_limit
+            and index < len(dialogue) - 1
+        ):
             calls = dialogue[index].get("tool_calls") or []
             count = len(calls)
-            responses = dialogue[index + 1:index + 1 + count]
+            responses = dialogue[index + 1 : index + 1 + count]
             ids = {call.get("id") for call in calls}
-            if (count and len(responses) == count
-                and all(item.get("role") == "tool" and json.loads(item["content"]).get("omitted") is True for item in responses)
-                and {item.get("tool_call_id") for item in responses} == ids):
-                del dialogue[index:index + 1 + count]
+            if (
+                count
+                and len(responses) == count
+                and all(
+                    item.get("role") == "tool"
+                    and json.loads(item["content"]).get("omitted") is True
+                    for item in responses
+                )
+                and {item.get("tool_call_id") for item in responses} == ids
+            ):
+                del dialogue[index : index + 1 + count]
                 removed += 1
             else:
                 index += 1
@@ -231,6 +249,8 @@ class ConversationAgent:
     async def _review_packet(self, system, packet, blocks, sources, document_refs):
         """Ask the reviewer about an explicit subset of answer blocks."""
         request_packet = dict(packet, blocks=blocks)
+        if blocks != packet["blocks"]:
+            request_packet["answer_blocks"] = packet["blocks"]
         request = [
             system,
             {"role": "user", "content": encoded(request_packet)},
@@ -253,9 +273,7 @@ class ConversationAgent:
         answers = []
         for block in blocks:
             try:
-                part = await self._review_packet(
-                    system, packet, [block], sources, document_refs
-                )
+                part = await self._review_packet(system, packet, [block], sources, document_refs)
             except Exception:
                 validated.append(
                     {
@@ -271,8 +289,10 @@ class ConversationAgent:
             validated.extend(part["blocks"])
         if not any(item["status"] in {"supported", "not_factual"} for item in validated):
             raise ValueError("review_unavailable")
-        accepted = bool(answers) and all(answers) and all(
-            item["status"] in {"supported", "not_factual"} for item in validated
+        accepted = (
+            bool(answers)
+            and all(answers)
+            and all(item["status"] in {"supported", "not_factual"} for item in validated)
         )
         return {
             "status": "accepted" if accepted else "rejected",
@@ -281,7 +301,18 @@ class ConversationAgent:
             "blocks": validated,
         }
 
-    async def _review_answer(self, question, rendered, provenance, history, emit, summary=None):
+    async def _review_answer(
+        self,
+        question,
+        rendered,
+        provenance,
+        history,
+        emit,
+        summary=None,
+        *,
+        previous_review=None,
+        defer=False,
+    ):
         await emit(
             "status",
             "Сверяю утверждения ответа: газ, компонент, единицы, границы и соответствие вопросу.",
@@ -289,6 +320,9 @@ class ConversationAgent:
         answer, sources = rendered["answer"], rendered["sources"]
         blocks, request = review_messages(question, answer, sources, provenance, history, summary)
         packet = json.loads(request[-1]["content"])
+        if previous_review is not None:
+            packet["previous_review"] = previous_review
+            request[-1]["content"] = encoded(packet)
         issues = normative_issues(blocks, sources)
         if issues:
             review = {
@@ -348,10 +382,7 @@ class ConversationAgent:
                             packet,
                             blocks,
                             sources,
-                            {
-                                source["id"]: source["document_id"]
-                                for source in packet["sources"]
-                            },
+                            {source["id"]: source["document_id"] for source in packet["sources"]},
                         )
                     except Exception:
                         review = None
@@ -403,6 +434,11 @@ class ConversationAgent:
                 reason="Утверждения и соответствие вопросу прошли автоматическую сверку с источниками. Отчёт доступен ниже.",
             )
             await emit("status", "Автоматическая сверка утверждений завершена.")
+            if not any(block["status"] == "supported" for block in review["blocks"]):
+                verification.update(
+                    status="not_applicable",
+                    reason="Пояснение или уточнение без утверждений о данных платформы.",
+                )
         elif review["status"] == "partial":
             verification.update(
                 status="partial",
@@ -428,10 +464,67 @@ class ConversationAgent:
                 else "Не удалось завершить проверку ответа по источникам. Непроверенный вывод не опубликован; источники сохранены ниже."
             )
             await emit(
-                "status", "Проверка не подтвердила ответ; неподтверждённый вывод не опубликован."
+                "status",
+                "Проверка нашла замечания; передаю их для исправления."
+                if defer
+                else "Проверка не подтвердила ответ; неподтверждённый вывод не опубликован.",
             )
         rendered["verification"] = verification
         return rendered
+
+    async def _assess_answer(
+        self,
+        question,
+        candidate,
+        rendered,
+        registry,
+        provenance,
+        history,
+        summary,
+        emit,
+        state,
+        remaining_calls,
+        tools,
+    ):
+        """One evaluation/feedback step shared by prose and compatibility replies."""
+        if rendered["verification"]["status"] in {"grounded", "verified"} or (
+            rendered["verification"]["status"] == "insufficient_data" and registry
+        ):
+            rendered = await self._review_answer(
+                question,
+                rendered,
+                provenance,
+                history,
+                emit,
+                summary,
+                previous_review=state.previous_review,
+                defer=state.revisions < state.limit,
+            )
+        state.record(candidate, rendered)
+        if state.needs_revision(rendered) and state.revisions < state.limit:
+            for source_limit in (64, 32, 16, 8, 1):
+                proposed = revision_messages(
+                    question,
+                    candidate,
+                    rendered,
+                    registry,
+                    provenance,
+                    history,
+                    summary,
+                    remaining_calls,
+                    final_round=state.revisions + 1 == state.limit,
+                    source_limit=source_limit,
+                )
+                if estimate(proposed, tools) + self.output_reserve <= self.context_limit:
+                    state.revisions += 1
+                    state.previous_review = rendered["verification"].get("review")
+                    await emit(
+                        "status",
+                        f"Уточняю ответ по замечаниям проверки ({state.revisions}/{state.limit}).",
+                    )
+                    return rendered, proposed
+            state.stopped_reason = "revision_context_limit"
+        return state.finish(rendered), None
 
     async def respond(
         self, message: str, messages: list[dict], summary: dict | None = None, *, on_event=None
@@ -486,7 +579,7 @@ class ConversationAgent:
                     "Невозможно сопоставить сводку с историей.", "context_limit"
                 )
             remaining = remaining[indices[0] + 1 :]
-            text = summary["text"]
+            text = strip_citations(summary["text"])
 
         def dialogue():
             result = [{"role": "system", "content": system_prompt(self.max_calls)}]
@@ -497,7 +590,15 @@ class ConversationAgent:
                         "content": SUMMARY_CONTEXT_NOTE + text,
                     }
                 )
-            result.extend({"role": m["role"], "content": m["content"]} for m in remaining)
+            result.extend(
+                {
+                    "role": m["role"],
+                    "content": strip_citations(m["content"])
+                    if m["role"] == "assistant"
+                    else m["content"],
+                }
+                for m in remaining
+            )
             result.append({"role": "user", "content": message})
             return result
 
@@ -574,6 +675,8 @@ class ConversationAgent:
         )
         events, registry, provenance = [], {}, {}
         verification_details = {}
+        reconciliation = ReconciliationState(self.max_answer_revisions)
+        format_repairs = 0
         answer, sources = "Недостаточно проверенных данных для ответа.", []
         status, reason = "insufficient_data", "Нет проверенных фактов MCP."
         async with self.session_factory() as session:
@@ -597,7 +700,7 @@ class ConversationAgent:
             dialogue, summary_update, compactions = await self._context(
                 message, messages, summary, tools, emit
             )
-            for step in range(self.max_calls + 1):
+            for step in range(self.max_calls + self.max_answer_revisions + 1):
                 remaining_calls = self.max_calls - len(events)
                 dialogue[0]["content"] = system_prompt(remaining_calls)
                 available_tools = tools if remaining_calls else []
@@ -619,56 +722,67 @@ class ConversationAgent:
                                 else None
                             )
                         except (ValueError, TypeError) as exc:
-                            diagnostic = str(exc) if str(exc) in {
-                                "empty_answer", "broken_answer_envelope", "invalid_answer_envelope",
-                                "invalid_answer_text", "unknown_answer_envelope", "invalid_answer",
-                                "invalid_source_reference", "invalid_source_range", "source_reference_limit",
-                            } else "answer_parse"
-                            if attempt or not visible_text(response.get("content")):
+                            diagnostic = (
+                                str(exc)
+                                if str(exc)
+                                in {
+                                    "empty_answer",
+                                    "broken_answer_envelope",
+                                    "invalid_answer_envelope",
+                                    "invalid_answer_text",
+                                    "unknown_answer_envelope",
+                                    "invalid_answer",
+                                    "invalid_source_reference",
+                                    "invalid_source_range",
+                                    "source_reference_limit",
+                                }
+                                else "answer_parse"
+                            )
+                            if (
+                                attempt
+                                or format_repairs
+                                or not visible_text(response.get("content"))
+                            ):
                                 raise ConversationError(
-                                    "Некорректный формат ответа модели.", "model_output_error",
+                                    "Некорректный формат ответа модели.",
+                                    "model_output_error",
                                     diagnostic=diagnostic,
                                 ) from None
                             repair_message = "Исправляю оформление ответа по уже полученным данным."
                             repair_context = [
-                                *dialogue, {"role": "system", "content": ANSWER_FORMAT_NOTE},
+                                *dialogue,
+                                {"role": "system", "content": ANSWER_FORMAT_NOTE},
                             ]
                         else:
-                            validation = (rendered or {}).get("verification", {}).get("validation", {})
-                            if attempt or validation.get("code") != "quantity_mismatch":
-                                break
-                            repair_message = "Сверка нашла неподтверждённые числа. Уточняю ответ по источникам."
-                            # Reuse complete current documents, not past dialogue or
-                            # invented numeric replacements. The next pass is checked again.
-                            _, evidence_request = review_messages(
-                                message, validation["candidate_text"], rendered["sources"],
-                                provenance, [],
-                            )
-                            packet = json.loads(evidence_request[-1]["content"])
-                            packet["numeric_check"] = validation["numeric_check"]
-                            repair_context = [
-                                {"role": "system", "content": system_prompt(0) + "\n" + ANSWER_EVIDENCE_NOTE},
-                                {"role": "user", "content": encoded(packet)},
-                            ]
-                        # One correction total per turn, with no additional MCP calls.
+                            break
+                        # One format correction per turn, separate from semantic revisions.
                         # Provider/context failures propagate; they are not format errors.
                         await emit("status", repair_message)
+                        format_repairs += 1
                         response = await self._complete(repair_context, [])
                         if response.get("tool_calls"):
                             raise ConversationError(
                                 "При исправлении ответа модель вызвала инструмент.",
-                                "model_output_error", diagnostic="answer_repair_tool_call",
+                                "model_output_error",
+                                diagnostic="answer_repair_tool_call",
                             )
                     if rendered is not None:
-                        if rendered["verification"]["status"] == "grounded":
-                            rendered = await self._review_answer(
-                                message,
-                                rendered,
-                                provenance,
-                                messages,
-                                emit,
-                                summary_update or summary,
-                            )
+                        rendered, next_dialogue = await self._assess_answer(
+                            message,
+                            visible_text(decision["text"]),
+                            rendered,
+                            registry,
+                            provenance,
+                            messages,
+                            summary_update or summary,
+                            emit,
+                            reconciliation,
+                            self.max_calls - len(events),
+                            available_tools,
+                        )
+                        if next_dialogue is not None:
+                            dialogue = next_dialogue
+                            continue
                         answer, sources = rendered["answer"], rendered["sources"]
                         status = rendered["verification"]["status"]
                         reason = rendered["verification"]["reason"]
@@ -803,6 +917,38 @@ class ConversationAgent:
                             else "Проверенные поля MCP (MOCK — синтетические данные):"
                         )
                         answer = header + "\n" + "\n".join(lines + list(dict.fromkeys(warnings)))
+                    if status == "verified" and sources:
+                        rendered, next_dialogue = await self._assess_answer(
+                            message,
+                            answer,
+                            {
+                                "answer": answer,
+                                "sources": sources,
+                                "verification": {"status": status, "reason": reason},
+                            },
+                            registry,
+                            provenance,
+                            messages,
+                            summary_update or summary,
+                            emit,
+                            reconciliation,
+                            self.max_calls - len(events),
+                            available_tools,
+                        )
+                        if next_dialogue is not None:
+                            dialogue = next_dialogue
+                            continue
+                        verification_details = rendered["verification"]
+                        status = (
+                            "verified"
+                            if verification_details["status"] == "reviewed"
+                            else verification_details["status"]
+                        )
+                        reason, answer, sources = (
+                            verification_details["reason"],
+                            rendered["answer"],
+                            rendered["sources"],
+                        )
                     break
                 if len(events) + len(calls) > self.max_calls:
                     raise ConversationError("Исчерпан лимит вызовов MCP.", "tool_limit")
@@ -948,27 +1094,6 @@ class ConversationAgent:
                     "Исчерпан лимит шагов.",
                     "Исчерпан лимит шагов MCP.",
                 )
-        # Compatibility formats must not bypass semantic/relevance review.
-        if status == "verified" and sources:
-            rendered = await self._review_answer(
-                message,
-                {
-                    "answer": answer,
-                    "sources": sources,
-                    "verification": {"status": status, "reason": reason},
-                },
-                provenance,
-                messages,
-                emit,
-                summary_update or summary,
-            )
-            verification_details = rendered["verification"]
-            status = (
-                "verified"
-                if verification_details["status"] == "reviewed"
-                else verification_details["status"]
-            )
-            reason, answer = verification_details["reason"], rendered["answer"]
         verification = {
             **verification_details,
             "status": status,

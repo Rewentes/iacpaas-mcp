@@ -152,6 +152,8 @@ def test_native_tool_context_retires_whole_results_but_keeps_full_events_and_evi
     assert result["context"]["compactions"] > 0
     assert len(result["events"]) == 5
     assert all(event["result"] == body for event in result["events"])
-    assert any(
-        "working_context_budget" in m.get("content", "") for m in calls[-1] if m["role"] == "tool"
-    )
+    assert sum(m["role"] == "tool" for m in calls[-1]) < len(result["events"])
+    for dialogue in calls:
+        expected = [call["id"] for message in dialogue for call in message.get("tool_calls", [])]
+        actual = [message["tool_call_id"] for message in dialogue if message["role"] == "tool"]
+        assert actual == expected

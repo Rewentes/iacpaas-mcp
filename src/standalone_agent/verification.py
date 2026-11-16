@@ -6,7 +6,7 @@ import re
 from decimal import Decimal
 
 from .answers import visible_text
-from .citations import citation_ids
+from .citations import citation_ids, strip_citations
 from .prompts import REVIEW_PROMPT
 from .runtime import redact
 
@@ -186,6 +186,12 @@ def normative_issues(blocks, sources):
 
 def review_messages(question, answer, sources, provenance, history, summary=None):
     blocks = answer_blocks(answer)
+    recent = [entry for entry in history if entry.get("state") != "failed"]
+    marker = summary.get("covered_through_message_id") if summary else None
+    if marker:
+        covered = [i for i, entry in enumerate(recent) if entry.get("id") == marker]
+        if len(covered) == 1:
+            recent = recent[covered[0] + 1 :]
     documents, keys, references = [], {}, {}
     for source in sources:
         result = redact(provenance[source["id"]], max_text=None, max_list=None)
@@ -202,10 +208,15 @@ def review_messages(question, answer, sources, provenance, history, summary=None
         ]
     payload = {
         "question": question,
-        "dialogue_summary": summary.get("text", "") if summary else "",
+        "dialogue_summary": strip_citations(summary.get("text", "")) if summary else "",
         "dialogue_context": [
-            {"role": item["role"], "text": item["content"]}
-            for item in [entry for entry in history if entry.get("state") != "failed"][-4:]
+            {
+                "role": item["role"],
+                "text": strip_citations(item["content"])
+                if item["role"] == "assistant"
+                else item["content"],
+            }
+            for item in recent[-4:]
         ],
         "blocks": blocks,
         "documents": documents,

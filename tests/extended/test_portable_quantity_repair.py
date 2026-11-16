@@ -45,6 +45,7 @@ def test_quantity_failure_is_corrected_once_then_checked_again(repair_succeeds):
     history = [{'id': 'old', 'role': 'assistant', 'content': 'Старая марка: 95.123 %.'}]
     result = asyncio.run(ConversationAgent(
         provider=provider, reviewer=reviewer, session_factory=gas_session,
+        max_calls=1, max_answer_revisions=1,
     ).respond('Сравни марки', history))
     assert len(calls) == 3 and len(result['events']) == 1
     assert '95.123 %' not in result['answer']
