@@ -170,7 +170,9 @@ class ConversationAgent:
     async def _complete(self, messages, tools, *, review=False):
         if estimate(messages, tools) + self.output_reserve > self.context_limit:
             raise ConversationError(
-                "Превышен лимит контекста; запрос не отправлен.", "context_limit"
+                "Превышен лимит контекста; запрос не отправлен.",
+                "context_limit",
+                diagnostic="completion_budget",
             )
         if self.provider is not None:
             return await self.provider(messages, tools)
@@ -246,6 +248,48 @@ class ConversationAgent:
             else:
                 index += 1
         return removed
+
+    def _evidence_context(
+        self,
+        question,
+        candidate,
+        rendered,
+        registry,
+        provenance,
+        history,
+        summary,
+        remaining_calls,
+        tools,
+        *,
+        final_round=False,
+    ):
+        """Fit feedback plus the next read, or finish from retained evidence without tools."""
+        for allow_tools in [True, False] if remaining_calls and tools else [False]:
+            available = tools if allow_tools else []
+            # Tool replies include evidence and message envelopes. Large parallel
+            # batches are checked again before the next completion.
+            reserve = self.tool_result_bytes + 512 if allow_tools else 0
+            for full_documents in (True, False):
+                for source_limit in (64, 32, 16, 8, 1):
+                    proposed = revision_messages(
+                        question,
+                        candidate,
+                        rendered,
+                        registry,
+                        provenance,
+                        history,
+                        summary,
+                        remaining_calls if allow_tools else 0,
+                        final_round=final_round,
+                        source_limit=source_limit,
+                        include_document_bodies=full_documents,
+                    )
+                    if (
+                        estimate(proposed, available) + self.output_reserve + reserve
+                        <= self.context_limit
+                    ):
+                        return proposed, allow_tools
+        return None, False
 
     async def _review_packet(self, system, packet, blocks, sources, document_refs):
         """Ask the reviewer about an explicit subset of answer blocks."""
@@ -507,27 +551,27 @@ class ConversationAgent:
             )
         state.record(candidate, rendered)
         if state.needs_revision(rendered) and state.revisions < state.limit:
-            for source_limit in (64, 32, 16, 8, 1):
-                proposed = revision_messages(
-                    question,
-                    candidate,
-                    rendered,
-                    registry,
-                    provenance,
-                    history,
-                    summary,
-                    remaining_calls,
-                    final_round=state.revisions + 1 == state.limit,
-                    source_limit=source_limit,
+            proposed, allow_tools = self._evidence_context(
+                question,
+                candidate,
+                rendered,
+                registry,
+                provenance,
+                history,
+                summary,
+                remaining_calls,
+                tools,
+                final_round=state.revisions + 1 == state.limit,
+            )
+            if proposed is not None:
+                state.tools_disabled = not allow_tools
+                state.revisions += 1
+                state.previous_review = rendered["verification"].get("review")
+                await emit(
+                    "status",
+                    f"Уточняю ответ по замечаниям проверки ({state.revisions}/{state.limit}).",
                 )
-                if estimate(proposed, tools) + self.output_reserve <= self.context_limit:
-                    state.revisions += 1
-                    state.previous_review = rendered["verification"].get("review")
-                    await emit(
-                        "status",
-                        f"Уточняю ответ по замечаниям проверки ({state.revisions}/{state.limit}).",
-                    )
-                    return rendered, proposed
+                return rendered, proposed
             state.stopped_reason = "revision_context_limit"
         return state.finish(rendered), None
 
@@ -706,14 +750,56 @@ class ConversationAgent:
                 message, messages, summary, tools, emit
             )
             for step in range(self.max_calls + self.max_answer_revisions + 1):
-                remaining_calls = self.max_calls - len(events)
+                remaining_calls = (
+                    0 if reconciliation.tools_disabled else self.max_calls - len(events)
+                )
                 dialogue[0]["content"] = system_prompt(remaining_calls)
                 if reconciliation.revisions:
                     dialogue[0]["content"] += "\n" + ANSWER_REVISION_NOTE
                 available_tools = tools if remaining_calls else []
                 compactions += self._compact_tool_context(dialogue, available_tools)
+                if estimate(dialogue, available_tools) + self.output_reserve > self.context_limit:
+                    previous = reconciliation.rounds[-1] if reconciliation.rounds else None
+                    compact, _ = self._evidence_context(
+                        message,
+                        previous["candidate_text"] if previous else "",
+                        {
+                            "sources": [
+                                registry[key] for key in previous["source_ids"] if key in registry
+                            ],
+                            "verification": previous,
+                        }
+                        if previous
+                        else None,
+                        registry,
+                        provenance,
+                        messages,
+                        summary_update or summary,
+                        0,
+                        [],
+                        final_round=reconciliation.revisions == reconciliation.limit,
+                    )
+                    if compact is None:
+                        raise ConversationError(
+                            "Рабочие данные не помещаются в контекст.",
+                            "context_limit",
+                            diagnostic="evidence_context_budget",
+                        )
+                    dialogue, available_tools = compact, []
+                    reconciliation.tools_disabled = True
+                    compactions += 1
+                    await emit(
+                        "status",
+                        "Сокращаю рабочие данные и готовлю ответ по прочитанным источникам.",
+                    )
                 response = await self._complete(dialogue, available_tools)
                 calls = response.get("tool_calls") or []
+                if calls and not available_tools:
+                    raise ConversationError(
+                        "Модель вызвала инструмент на этапе итогового ответа.",
+                        "model_output_error",
+                        diagnostic="tool_call_without_tools",
+                    )
                 if calls and response.get("content"):
                     await emit("commentary", response["content"])
                 if not calls:
@@ -784,7 +870,7 @@ class ConversationAgent:
                             summary_update or summary,
                             emit,
                             reconciliation,
-                            self.max_calls - len(events),
+                            remaining_calls,
                             available_tools,
                         )
                         if next_dialogue is not None:
@@ -939,7 +1025,7 @@ class ConversationAgent:
                             summary_update or summary,
                             emit,
                             reconciliation,
-                            self.max_calls - len(events),
+                            remaining_calls,
                             available_tools,
                         )
                         if next_dialogue is not None:
@@ -1014,10 +1100,9 @@ class ConversationAgent:
                         else "Получен результат чтения; сверяю его с вопросом.",
                     )
                     result = raw.structuredContent
+                    safe_result = redact(result, max_text=None, max_list=None)
                     raw_bytes = len(encoded(result).encode())
-                    envelope_bytes = len(
-                        encoded({"result": redact(result), "evidence": []}).encode()
-                    )
+                    envelope_bytes = len(encoded({"result": safe_result, "evidence": []}).encode())
                     if max(raw_bytes, envelope_bytes) > self.tool_result_bytes:
                         if (
                             not raw.isError
@@ -1058,7 +1143,7 @@ class ConversationAgent:
                     event = {
                         "name": name,
                         "arguments": redact(arguments),
-                        "result": redact(result),
+                        "result": safe_result,
                         "status": "error" if failed else "ok",
                     }
                     events.append(event)
@@ -1077,7 +1162,7 @@ class ConversationAgent:
                     ):
                         collect_evidence(result["data"], registry)
                     new = [s for key, s in registry.items() if key not in before]
-                    payload = encoded({"result": redact(result), "evidence": new})
+                    payload = encoded({"result": safe_result, "evidence": new})
                     while (
                         isinstance(result, dict)
                         and result.get("backend") == "iacpaas"
@@ -1085,7 +1170,7 @@ class ConversationAgent:
                         and len(payload.encode()) > self.tool_result_bytes
                     ):
                         registry.pop(new.pop()["id"])
-                        payload = encoded({"result": redact(result), "evidence": new})
+                        payload = encoded({"result": safe_result, "evidence": new})
                     if len(payload.encode()) > self.tool_result_bytes:
                         raise ConversationError(
                             "Доказательства MCP превышают лимит; сузьте запрос.",
@@ -1114,7 +1199,7 @@ class ConversationAgent:
             "events": events,
             "summary_update": summary_update,
             "context": {
-                "estimated_input_tokens": estimate(dialogue, tools),
+                "estimated_input_tokens": estimate(dialogue, available_tools),
                 "limit": self.context_limit,
                 "compactions": compactions,
             },
