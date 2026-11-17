@@ -3,13 +3,17 @@
 import asyncio
 import copy
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+from starlette.testclient import TestClient
 from test_portable_reconciliation import review_report
 
+from gas_web.app import create_app
 from standalone_agent.conversation import ConversationAgent, estimate
 from standalone_agent.prompts import ANSWER_REVISION_NOTE
+from standalone_agent.working_memory import working_summary_prompt
 
 
 @asynccontextmanager
@@ -50,6 +54,7 @@ async def large_session():
                             }
                         ],
                         "description": "A" * 3900,
+                        "api_key": "fixture-secret-value",
                     },
                 },
             )
@@ -84,10 +89,15 @@ async def reviewer(messages, tools):
 
 def test_revision_reserves_next_result_or_finishes_without_tools():
     requests = []
+    summaries = []
     evidence = None
 
     async def writer(messages, tools):
         nonlocal evidence
+        if messages[0]["content"] == working_summary_prompt(2048):
+            assert tools == []
+            summaries.append(json.loads(messages[-1]["content"]))
+            return {"content": "Прочитана карточка учебного газа; нормативная чистота ≥ 99.5 %."}
         requests.append(copy.deepcopy(messages))
         assert estimate(messages, tools) + 512 <= 21000
         if len(requests) == 1:
@@ -98,12 +108,8 @@ def test_revision_reserves_next_result_or_finishes_without_tools():
             return {"content": f"Учебный газ: ≥ 90 %. [{evidence}]"}
         assert ANSWER_REVISION_NOTE in messages[0]["content"]
         assert packet["revision_feedback"]["status"] == "rejected"
-        # Previously the full feedback fit but another read overflowed. It must
-        # either leave room for that read or explicitly turn off tool calling.
-        if tools:
-            assert estimate(messages, tools) + 512 + 5000 <= 21000
-        else:
-            assert "Осталось вызовов MCP: 0" in messages[0]["content"]
+        assert tools  # Compression preserves the ability to keep investigating.
+        assert packet["working_summary"]["text"]
         return {"content": f"Учебный газ: ≥ 99.5 %. [{evidence}]"}
 
     result = asyncio.run(
@@ -120,6 +126,7 @@ def test_revision_reserves_next_result_or_finishes_without_tools():
     assert result["verification"]["status"] == "reviewed"
     assert result["verification"]["reconciliation"]["revisions"] == 1
     assert len(requests) == 3 and len(result["events"]) == 1
+    assert len(summaries) == 1
     assert result["events"][0]["result"]["data"]["description"] == "A" * 3900
 
 
@@ -132,16 +139,22 @@ def test_large_call_envelope_compacts_evidence_and_keeps_followup_context():
     original = copy.deepcopy(history)
 
     async def writer(messages, tools):
+        if messages[0]["content"] == working_summary_prompt(2048):
+            assert tools == []
+            return {
+                "content": "Найдена карточка учебного газа; сведения прочитаны, проверку можно продолжить."
+            }
         requests.append(copy.deepcopy(messages))
         assert estimate(messages, tools) + 512 <= 21000
         if len(requests) == 1:
             return read({"filter": "x" * 4400})
-        assert tools == []
+        assert tools
         packet = json.loads(messages[-1]["content"])
         assert packet["question"] == "А какая у него чистота?"
         assert packet["dialogue_context"][-1]["text"].strip() == "Обсуждали чистоту учебного газа."
         assert "e999" not in json.dumps(packet)
         assert packet["documents"][0]["result"]["warnings"] == ["Synthetic fixture"]
+        assert packet["working_summary"]["covered_events"] == 1
         return {"content": f"Учебный газ: ≥ 99.5 %. [{source_id(packet)}]"}
 
     result = asyncio.run(
@@ -164,8 +177,15 @@ def test_large_call_envelope_compacts_evidence_and_keeps_followup_context():
 
 def test_parallel_reads_after_feedback_keep_revision_when_context_is_rebuilt():
     requests = []
+    summaries = []
 
     async def writer(messages, tools):
+        if messages[0]["content"] == working_summary_prompt(2048):
+            assert tools == []
+            summaries.append(json.loads(messages[-1]["content"]))
+            return {
+                "content": "Прочитаны характеристики учебного газа. Чистота ≥ 99.5 %. Проверить ответ."
+            }
         requests.append(copy.deepcopy(messages))
         assert estimate(messages, tools) + 512 <= 26000
         if len(requests) == 1:
@@ -200,3 +220,87 @@ def test_parallel_reads_after_feedback_keep_revision_when_context_is_rebuilt():
     assert result["context"]["compactions"] >= 1
     assert result["verification"]["status"] == "reviewed"
     assert result["verification"]["reconciliation"]["revisions"] == 1
+    assert len(summaries) >= 2
+    assert summaries[1]["previous_working_summary"]
+    assert len(summaries[1]["tool_events"]) == 2
+    assert result["context"]["working_summary"]["covered_events"] == 3
+
+
+def test_web_turn_continues_reading_after_summary_and_keeps_original_history(tmp_path):
+    reads, summaries = [], []
+
+    async def writer(messages, tools):
+        if messages[0]["content"] == working_summary_prompt(2048):
+            assert tools == []
+            summaries.append(json.loads(messages[-1]["content"]))
+            return {"content": "Учебный газ найден. Проверка свойств продолжается."}
+        reads.append(copy.deepcopy(messages))
+        if len(reads) == 1:
+            return read({"filter": "x" * 4400})
+        packet = json.loads(messages[-1]["content"])
+        assert packet["working_summary"]["text"]
+        if len(reads) == 2:
+            assert tools and "Осталось вызовов MCP: 2" in messages[0]["content"]
+            return read({"field": "purity"})
+        return {"content": f"Учебный газ: ≥ 99.5 %. [{source_id(packet)}]"}
+
+    agent = ConversationAgent(
+        provider=writer,
+        reviewer=reviewer,
+        session_factory=large_session,
+        context_limit=21000,
+        output_reserve=512,
+        tool_result_bytes=5000,
+        max_calls=3,
+    )
+    path = tmp_path / "history.db"
+    with TestClient(create_app(db_path=path, agent=agent)) as client:
+        client.headers["X-CSRF-Token"] = client.get("/api/me").json()["csrf_token"]
+        chat = client.post("/api/conversations", json={"title": "Сжатие"}).json()["id"]
+        uri = f"/api/conversations/{chat}/messages"
+        question = "Проверь свойства учебного газа"
+        response = client.post(uri, json={"request_id": "q1", "content": question})
+        assert response.status_code == 200
+        history = client.get(uri).json()["messages"]
+        assert len(history) == 2 and history[0]["content"] == question
+        assert history[1]["content"].startswith("Учебный газ: ≥ 99.5 %.")
+        assert "Проверка свойств продолжается" not in history[1]["content"]
+    with sqlite3.connect(path) as db:
+        context = json.loads(db.execute("SELECT context FROM conversations").fetchone()[0])
+        events = [json.loads(row[0]) for row in db.execute("SELECT event FROM events")]
+    assert context["working_summary"]["text"] and context["working_summary"]["covered_events"] == 2
+    assert len(reads) == 3 and len(summaries) == 2 and len(events) == 2
+    assert all(e["result"]["data"]["description"] == "A" * 3900 for e in events)
+    assert "fixture-secret-value" not in json.dumps(events + summaries)
+
+
+def test_inaccurate_working_summary_cannot_override_exact_numeric_evidence():
+    requests = []
+
+    async def writer(messages, tools):
+        if messages[0]["content"] == working_summary_prompt(2048):
+            return {"content": "Чистота учебного газа ≥ 90 %."}  # Deliberately inaccurate.
+        requests.append(copy.deepcopy(messages))
+        if len(requests) == 1:
+            return read({"filter": "x" * 4400})
+        packet = json.loads(messages[-1]["content"])
+        source = source_id(packet)
+        if len(requests) == 2:
+            return {"content": f"Учебный газ: ≥ 90 %. [{source}]"}
+        assert packet["revision_feedback"]["status"] == "rejected"
+        assert next(s for s in packet["sources"] if s["id"] == source)["value"] == 99.5
+        return {"content": f"Учебный газ: ≥ 99.5 %. [{source}]"}
+
+    result = asyncio.run(
+        ConversationAgent(
+            provider=writer,
+            reviewer=reviewer,
+            session_factory=large_session,
+            context_limit=21000,
+            output_reserve=512,
+            tool_result_bytes=5000,
+        ).respond("Чистота учебного газа?", [])
+    )
+    assert result["verification"]["status"] == "reviewed"
+    assert result["verification"]["reconciliation"]["revisions"] == 1
+    assert "90 %" not in result["answer"] and "99.5 %" in result["answer"]

@@ -22,6 +22,7 @@ from .reconciliation import ReconciliationState, revision_messages
 from .review_options import openrouter_review_options, openrouter_sampling_options
 from .runtime import SECRET, WRITES, redact
 from .verification import normative_issues, review_messages, validate_review
+from .working_memory import WorkingMemory
 
 
 def encoded(value):
@@ -262,14 +263,19 @@ class ConversationAgent:
         tools,
         *,
         final_round=False,
+        working_summary=None,
     ):
         """Fit feedback plus the next read, or finish from retained evidence without tools."""
-        for allow_tools in [True, False] if remaining_calls and tools else [False]:
+        modes = (
+            [(True, self.tool_result_bytes + 512), (True, 0), (False, 0)]
+            if remaining_calls and tools
+            else [(False, 0)]
+        )
+        for allow_tools, reserve in modes:
             available = tools if allow_tools else []
             # Tool replies include evidence and message envelopes. Large parallel
             # batches are checked again before the next completion.
-            reserve = self.tool_result_bytes + 512 if allow_tools else 0
-            for full_documents in (True, False):
+            for full_documents in (False,) if working_summary else (True, False):
                 for source_limit in (64, 32, 16, 8, 1):
                     proposed = revision_messages(
                         question,
@@ -283,6 +289,7 @@ class ConversationAgent:
                         final_round=final_round,
                         source_limit=source_limit,
                         include_document_bodies=full_documents,
+                        working_summary=working_summary,
                     )
                     if (
                         estimate(proposed, available) + self.output_reserve + reserve
@@ -551,7 +558,9 @@ class ConversationAgent:
             )
         state.record(candidate, rendered)
         if state.needs_revision(rendered) and state.revisions < state.limit:
-            proposed, allow_tools = self._evidence_context(
+            # The next loop prepares this packet through working-memory
+            # compression before deciding whether tools still fit.
+            proposed = revision_messages(
                 question,
                 candidate,
                 rendered,
@@ -560,19 +569,15 @@ class ConversationAgent:
                 history,
                 summary,
                 remaining_calls,
-                tools,
                 final_round=state.revisions + 1 == state.limit,
             )
-            if proposed is not None:
-                state.tools_disabled = not allow_tools
-                state.revisions += 1
-                state.previous_review = rendered["verification"].get("review")
-                await emit(
-                    "status",
-                    f"Уточняю ответ по замечаниям проверки ({state.revisions}/{state.limit}).",
-                )
-                return rendered, proposed
-            state.stopped_reason = "revision_context_limit"
+            state.revisions += 1
+            state.previous_review = rendered["verification"].get("review")
+            await emit(
+                "status",
+                f"Уточняю ответ по замечаниям проверки ({state.revisions}/{state.limit}).",
+            )
+            return rendered, proposed
         return state.finish(rendered), None
 
     async def respond(
@@ -725,6 +730,7 @@ class ConversationAgent:
         events, registry, provenance = [], {}, {}
         verification_details = {}
         reconciliation = ReconciliationState(self.max_answer_revisions)
+        working_memory = WorkingMemory()
         format_repairs = 0
         answer, sources = "Недостаточно проверенных данных для ответа.", []
         status, reason = "insufficient_data", "Нет проверенных фактов MCP."
@@ -757,6 +763,58 @@ class ConversationAgent:
                 if reconciliation.revisions:
                     dialogue[0]["content"] += "\n" + ANSWER_REVISION_NOTE
                 available_tools = tools if remaining_calls else []
+                reserve = self.tool_result_bytes + 512 if available_tools else 0
+                if (
+                    events
+                    and estimate(dialogue, available_tools) + self.output_reserve + reserve
+                    > self.context_limit
+                ):
+                    previous = reconciliation.rounds[-1] if reconciliation.rounds else None
+                    prior_requests = working_memory.requests
+                    prior_failure = working_memory.failure
+                    await working_memory.compress(
+                        message,
+                        events,
+                        self._complete,
+                        lambda request: (
+                            estimate(request, []) + self.output_reserve <= self.context_limit
+                        ),
+                        self.summary_bytes,
+                        emit,
+                    )
+                    compactions += working_memory.requests - prior_requests
+                    if working_memory.failure and prior_failure is None:
+                        await emit(
+                            "status",
+                            "Не удалось получить рабочую сводку; использую сохранённые источники.",
+                        )
+                    if working_memory.text and working_memory.covered_events == len(events):
+                        compact, allow_tools = self._evidence_context(
+                            message,
+                            previous["candidate_text"] if previous else "",
+                            {
+                                "sources": [
+                                    registry[key]
+                                    for key in previous["source_ids"]
+                                    if key in registry
+                                ],
+                                "verification": previous,
+                            }
+                            if previous
+                            else None,
+                            registry,
+                            provenance,
+                            messages,
+                            summary_update or summary,
+                            remaining_calls,
+                            available_tools,
+                            final_round=reconciliation.revisions == reconciliation.limit,
+                            working_summary=working_memory.snapshot(),
+                        )
+                        if compact is not None:
+                            dialogue = compact
+                            available_tools = tools if allow_tools else []
+                            reconciliation.tools_disabled = not allow_tools
                 compactions += self._compact_tool_context(dialogue, available_tools)
                 if estimate(dialogue, available_tools) + self.output_reserve > self.context_limit:
                     previous = reconciliation.rounds[-1] if reconciliation.rounds else None
@@ -1202,5 +1260,6 @@ class ConversationAgent:
                 "estimated_input_tokens": estimate(dialogue, available_tools),
                 "limit": self.context_limit,
                 "compactions": compactions,
+                "working_summary": working_memory.snapshot(),
             },
         }

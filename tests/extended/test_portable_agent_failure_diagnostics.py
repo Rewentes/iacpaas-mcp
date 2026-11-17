@@ -8,6 +8,7 @@ from starlette.testclient import TestClient
 
 from gas_web.app import create_app
 from standalone_agent.conversation import ConversationAgent, ConversationError
+from standalone_agent.working_memory import working_summary_prompt
 
 
 @pytest.mark.parametrize("code", ["tool_result_limit", "context_limit", "model_output_error"])
@@ -114,6 +115,9 @@ def test_native_tool_context_retires_whole_results_but_keeps_full_events_and_evi
         yield Session()
 
     async def provider(messages, tools):
+        if messages[0]["content"] == working_summary_prompt(256):
+            assert tools == []
+            return {"content": "Прочитаны учебные данные ресурса /gases, поле value. Продолжить проверку."}
         calls.append(json.loads(json.dumps(messages)))
         assert estimate(messages, tools) + 256 <= 9000
         if len(calls) <= 5:
@@ -131,11 +135,10 @@ def test_native_tool_context_retires_whole_results_but_keeps_full_events_and_evi
             }
         assert tools == []
         assert "Осталось вызовов MCP: 0" in messages[0]["content"]
-        evidence = json.loads(messages[-1]["content"])["evidence"]
+        packet = json.loads(messages[-1]["content"])
+        evidence = packet.get("evidence", packet.get("sources", []))
         source = next(s for s in evidence if s["field"] == "value")
-        claim = {k: v for k, v in source.items() if k != "id"}
-        claim["source_id"] = source["id"]
-        return {"role": "assistant", "content": json.dumps({"claims": [claim]})}
+        return {"role": "assistant", "content": json.dumps({"source_ids": [source["id"]]})}
 
     agent = ConversationAgent(
         reviewer=accepted_review,
