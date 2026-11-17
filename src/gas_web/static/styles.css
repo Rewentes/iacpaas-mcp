@@ -45,7 +45,7 @@ main{border:0;border-radius:0}.topbar{min-height:72px;border:0;padding:16px 28px
 .topbar-title{flex:1;min-width:0}.topbar-title>div{min-width:0;flex:1}.topbar-title h1{display:block;font-size:var(--ui-section);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
 .topbar-actions{flex:none}.sidebar-footer{border:0;padding:12px 0 0;display:block}
 .sidebar-settings.ring-button-button{display:flex;align-items:center;gap:12px;width:100%;height:auto;min-height:44px;padding:10px 12px;border:0;box-shadow:none;background:transparent;color:var(--ink);border-radius:var(--ui-radius-control);font-size:var(--ring-font-size)}
-.sidebar-settings:hover:not(:disabled){background:var(--hover)}.sidebar-settings svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.6;flex:none}
+.sidebar-settings:hover:not(:disabled){background:var(--hover)}.sidebar-settings svg{display:block;width:20px;height:20px;fill:currentColor;stroke:none;flex:none}
 .new-chat.ring-button-button{background:transparent;color:var(--ink)}.new-chat:hover:not(:disabled){background:var(--hover)}
 #conversations .conversation-item{min-height:44px;padding:10px 12px}#conversations .conversation-item time{display:none}
 .section-label{padding-left:12px;font-weight:500}.brand-caption{display:none}.brand-mark{width:32px;height:32px}
