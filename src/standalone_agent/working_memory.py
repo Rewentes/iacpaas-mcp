@@ -3,6 +3,9 @@
 import json
 from dataclasses import dataclass
 
+from .errors import ConversationError
+from .provider_errors import PROVIDER_FAILURES
+
 
 def working_summary_prompt(max_bytes):
     return (
@@ -60,8 +63,12 @@ class WorkingMemory:
             self.requests += 1
             try:
                 response = await complete(request, [])
-            except Exception:
-                self.failure = "summary_provider_error"
+            except Exception as exc:
+                self.failure = (
+                    "summary_" + exc.code
+                    if isinstance(exc, ConversationError) and exc.code in PROVIDER_FAILURES
+                    else "summary_provider_error"
+                )
                 break
             text = response.get("content") if isinstance(response, dict) else None
             if (

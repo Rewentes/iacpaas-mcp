@@ -11,6 +11,12 @@ import httpx
 
 from standalone_agent.completion import completion_message
 from standalone_agent.errors import ConversationError
+from standalone_agent.provider_errors import (
+    PROVIDER_FAILURES,
+    is_batch_model,
+    require_interactive_model,
+    transport_failure,
+)
 from standalone_agent.review_options import openrouter_review_options, openrouter_sampling_options
 
 PROVIDERS = [
@@ -118,6 +124,8 @@ class ModelSettings:
             or not MODEL_ID.fullmatch(model)
         ):
             raise ValueError("Укажите провайдера и модель.")
+        if is_batch_model(provider, model):
+            raise ValueError(PROVIDER_FAILURES["provider_mode_unsupported"])
         key = body.get("api_key", "")
         clear = body.get("clear_api_key", False)
         if (
@@ -184,6 +192,9 @@ class ModelSettings:
             "connection_status": status,
             "providers": PROVIDERS,
             "codex": {key: codex[key] for key in ("installed", "connected")},
+            "model_warning": PROVIDER_FAILURES["provider_mode_unsupported"]
+            if is_batch_model(profile.provider, profile.model)
+            else None,
         }
 
     async def models(self, owner_id, provider):
@@ -214,7 +225,8 @@ class ModelSettings:
                     or not 1 <= len(name) <= 300
                 ):
                     raise ValueError("Invalid catalogue entry")
-                items[model] = {"id": model, "name": name}
+                if not is_batch_model(provider, model):
+                    items[model] = {"id": model, "name": name}
             return {"items": list(items.values()), "source": "catalog", "verified_access": False}
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             raise SettingsError(
@@ -223,6 +235,7 @@ class ModelSettings:
             ) from None
 
     def provider(self, profile, *, output_tokens=None, review=False):
+        require_interactive_model(profile.provider, profile.model)
         if output_tokens is None:
             output_tokens = int(os.environ.get("AGENT_OUTPUT_RESERVE", "4096"))
         if profile.provider == "codex":
@@ -256,8 +269,14 @@ class ModelSettings:
                 return completion_message(data)
             except ConversationError:
                 raise
-            except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError):
-                raise ConversationError("Запрос к выбранному провайдеру не выполнен.") from None
+            except httpx.HTTPError as exc:
+                raise transport_failure(exc) from None
+            except (ValueError, KeyError, TypeError, IndexError):
+                raise ConversationError(
+                    PROVIDER_FAILURES["provider_response_error"],
+                    "provider_response_error",
+                    diagnostic="provider_payload",
+                ) from None
 
         return complete
 
@@ -290,6 +309,8 @@ class ModelSettings:
                     "Сохраните API-ключ выбранного провайдера.", "configuration_error", 503
                 ) from None
             self.record_test(profile, "error")
+            if exc.code in PROVIDER_FAILURES:
+                raise SettingsError(PROVIDER_FAILURES[exc.code], exc.code) from None
             raise SettingsError(
                 "Проверка не пройдена. Проверьте ключ, модель и доступный лимит."
             ) from None

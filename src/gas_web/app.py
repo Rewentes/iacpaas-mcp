@@ -19,6 +19,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
+from standalone_agent.provider_errors import PROVIDER_FAILURES
+
 from .model_settings import ModelSettings, SettingsError
 from .platform_settings import PlatformSettings
 from .storage import Conflict, Storage
@@ -32,8 +34,10 @@ AGENT_FAILURES = {
     "empty_model_output": "Провайдер вернул пустой ответ модели. Проверенный ответ не сформирован.",
     "model_refusal": "Провайдер отклонил формирование ответа. Проверенный ответ не сформирован.",
     "provider_unavailable": "Не удалось получить ответ модели. Проверьте доступность провайдера.",
+    "turn_timeout": "Истекло общее время обработки вопроса. Ответ не завершён.",
     "agent_error": "Не удалось завершить обработку запроса к модели или MCP.",
 }
+AGENT_FAILURES.update(PROVIDER_FAILURES)
 
 
 class SecurityHeaders:

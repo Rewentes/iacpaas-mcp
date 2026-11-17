@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 import httpx
 
 from .completion import completion_message
+from .errors import ConversationError
+from .provider_errors import PROVIDER_FAILURES, require_interactive_model, transport_failure
 from .review_options import openrouter_review_options, openrouter_sampling_options
 from .runtime import Decision, ToolCall
 
@@ -91,6 +93,8 @@ class OpenAIModel:
 
     async def complete(self, messages, tools, *, review=False):
         """Transport for the shared conversational engine used by CLI and web."""
+        if urlparse(self.url).hostname == "openrouter.ai":
+            require_interactive_model("openrouter", self.model)
         payload = {
             "model": self.model,
             "messages": messages,
@@ -107,16 +111,27 @@ class OpenAIModel:
             payload.update(await options(self.model, self.client))
 
         async def request(client):
-            response = await client.post(
-                self.url,
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json=payload,
-                timeout=60,
-            )
-            response.raise_for_status()
-            if len(response.content) > 1048576:
-                raise ValueError("Model response too large")
-            return completion_message(response.json())
+            try:
+                response = await client.post(
+                    self.url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=payload,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                if len(response.content) > 1048576:
+                    raise ValueError("Model response too large")
+                return completion_message(response.json())
+            except ConversationError:
+                raise
+            except httpx.HTTPError as exc:
+                raise transport_failure(exc) from None
+            except ValueError:
+                raise ConversationError(
+                    PROVIDER_FAILURES["provider_response_error"],
+                    "provider_response_error",
+                    diagnostic="provider_payload",
+                ) from None
 
         if self.client is not None:
             return await request(self.client)

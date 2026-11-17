@@ -44,6 +44,10 @@ export function initSettings(api) {
       $('settings-status').textContent = 'Изменения не сохранены. Сохраните их перед проверкой.';
       return;
     }
+    if (saved.model_warning) {
+      $('settings-status').textContent = saved.model_warning;
+      return;
+    }
     // Codex "connected" reports authentication, not a model inference.
     const tested = saved.provider === 'codex' ? codexTestedModel === saved.model && auth?.connected : saved.connection_status === 'connected';
     const keyStatus = saved.provider === 'codex' ? '' : `${saved.api_key_set ? 'API-ключ сохранён.' : 'API-ключ не задан.'} `;
@@ -53,10 +57,11 @@ export function initSettings(api) {
   function render(profile) {
     saved = profile;
     const items = catalogs.get(profile.provider) || [];
-    select.replaceChildren(option(profile.model), ...items.filter(item => item.id !== profile.model).map(item => option(item.id, item.name || item.id)));
+    select.replaceChildren(option(profile.model, profile.model_warning ? `${profile.model} · не подходит для чата` : profile.model), ...items.filter(item => item.id !== profile.model).map(item => option(item.id, item.name || item.id)));
     select.value = profile.model;
     $('model').textContent = `Модель: ${profile.model}`;
     $('model').title = profile.model;
+    if (profile.model_warning) notice(profile.model_warning);
     controls();
   }
   async function catalog(id) {
