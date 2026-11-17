@@ -230,7 +230,9 @@ class ModelSettings:
             return {"items": list(items.values()), "source": "catalog", "verified_access": False}
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             raise SettingsError(
-                "Каталог недоступен. Проверьте ключ и сеть; идентификатор модели можно ввести вручную.",
+                "Открытый каталог OpenRouter недоступен. Проверьте соединение с OpenRouter."
+                if provider == "openrouter"
+                else "Каталог моделей недоступен. Проверьте подключение и доступ к провайдеру.",
                 "catalog_unavailable",
             ) from None
 

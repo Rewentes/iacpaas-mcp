@@ -61,6 +61,7 @@ export function initSettings(api) {
     select.value = profile.model;
     $('model').textContent = `Модель: ${profile.model}`;
     $('model').title = profile.model;
+    key.placeholder = profile.api_key_set ? 'Ключ сохранён. Введите новый для замены.' : 'Вставьте API-ключ';
     if (profile.model_warning) notice(profile.model_warning);
     controls();
   }
@@ -243,7 +244,8 @@ export function initSettings(api) {
       if (saved.provider === 'codex') codexTestedModel = saved.model;
       render(await api.settings()); status();
     } catch (error) {
-      $('settings-status').textContent = 'Проверка модели не пройдена.';
+      const keyStatus = saved?.provider === 'codex' ? '' : saved?.api_key_set ? 'API-ключ сохранён. ' : 'API-ключ не задан. ';
+      $('settings-status').textContent = keyStatus + 'Проверка модели не пройдена.';
       if (saved?.provider === 'codex') codexTestedModel = null;
       errorText(error);
     } finally { busy = false; controls(); }

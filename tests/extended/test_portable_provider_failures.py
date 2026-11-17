@@ -23,6 +23,7 @@ from standalone_agent.provider_errors import is_batch_model
     [
         (400, "provider_request_error"),
         (401, "provider_auth_error"),
+        (403, "provider_access_denied"),
         (402, "provider_credit_limit"),
         (404, "provider_model_unavailable"),
         (429, "provider_rate_limit"),

@@ -6,7 +6,8 @@ from .errors import ConversationError
 
 PROVIDER_FAILURES = {
     "provider_mode_unsupported": "Выбрана пакетная модель (:batch). Для этого чата выберите обычную версию без :batch в настройках.",
-    "provider_auth_error": "Провайдер отклонил авторизацию. Проверьте ключ и права доступа в настройках.",
+    "provider_auth_error": "Провайдер отклонил авторизацию (HTTP 401). Проверьте ключ и права доступа в настройках.",
+    "provider_access_denied": "Провайдер запретил запрос (HTTP 403). Возможны ограничения доступа или правила обработки запроса; этот код сам по себе не означает неверный ключ.",
     "provider_credit_limit": "Провайдер сообщил о недостаточном балансе или лимите расходов ключа.",
     "provider_rate_limit": "Провайдер ограничил частоту запросов. Повторите запрос позже.",
     "provider_model_unavailable": "Выбранная модель недоступна у провайдера. Проверьте её идентификатор и доступ в настройках.",
@@ -35,7 +36,7 @@ def http_failure(status):
         400: "provider_request_error",
         401: "provider_auth_error",
         402: "provider_credit_limit",
-        403: "provider_auth_error",
+        403: "provider_access_denied",
         404: "provider_model_unavailable",
         422: "provider_request_error",
         429: "provider_rate_limit",
