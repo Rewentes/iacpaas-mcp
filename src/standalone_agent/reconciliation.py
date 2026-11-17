@@ -19,6 +19,7 @@ def revision_messages(
     final_round=False,
     source_limit=64,
     include_document_bodies=True,
+    working_summary=None,
 ):
     # Keep cited evidence first, then the other normative facts already read.
     # IDs always come from the server-owned registry, never from the draft.
@@ -52,6 +53,8 @@ def revision_messages(
             packet["numeric_check"] = validation["numeric_check"]
     packet["final_revision"] = final_round
     packet["omitted_evidence_count"] = len(registry) - len(selected)
+    if working_summary:
+        packet["working_summary"] = working_summary
     if not include_document_bodies:
         for document in packet["documents"]:
             document["result"] = {
@@ -63,6 +66,8 @@ def revision_messages(
         "data_omitted и omitted_evidence_count означают сокращение рабочего контекста, "
         "а не отсутствие данных в базе. Сохраняй смысл полей, единицы и ограничения. "
         "История нужна для понимания вопроса и не подтверждает факты."
+        " working_summary — сводка действий и прочитанных данных для продолжения работы, "
+        "а не самостоятельный источник. Подтверждай утверждения текущими sources/documents."
     )
     return [
         {

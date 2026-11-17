@@ -339,7 +339,7 @@ class Storage:
             for event in result["events"]:
                 db.execute(
                     "INSERT INTO events (conversation_id,request_id,assistant_message_id,event) VALUES (?,?,?,?)",
-                    (conversation_id, request_id, assistant["id"], json.dumps(redact(event))),
+                    (conversation_id, request_id, assistant["id"], json.dumps(redact(event, max_text=None, max_list=None))),
                 )
             response = {
                 "conversation": dict(db.execute(
