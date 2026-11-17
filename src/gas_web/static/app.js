@@ -96,7 +96,16 @@ function renderConversations() {
     if (item.id === state.conversation?.id) button.setAttribute('aria-current', 'page');
     button.addEventListener('click', () => openConversation(item.id));
     const menu = element('div', undefined, 'conversation-menu');
-    const trigger = element('button', '⋯', 'conversation-menu-trigger');
+    const trigger = element('button', undefined, 'conversation-menu-trigger');
+    const dots = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    dots.setAttribute('viewBox', '0 0 24 24');
+    dots.setAttribute('aria-hidden', 'true');
+    for (const x of [5, 12, 19]) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', x); dot.setAttribute('cy', '12'); dot.setAttribute('r', '1.5');
+      dots.append(dot);
+    }
+    trigger.append(dots);
     trigger.type = 'button';
     trigger.setAttribute('aria-label', `Действия: ${item.title}`);
     trigger.setAttribute('aria-haspopup', 'menu');

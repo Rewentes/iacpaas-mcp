@@ -18,36 +18,58 @@ def revision_messages(
     remaining_calls,
     final_round=False,
     source_limit=64,
+    include_document_bodies=True,
 ):
     # Keep cited evidence first, then the other normative facts already read.
     # IDs always come from the server-owned registry, never from the draft.
     selected = list(
         dict.fromkeys(
             [
-                *(s["id"] for s in rendered["sources"] if s["id"] in registry),
-                *(key for key, s in registry.items() if s.get("value_kind") == "normative_limit"),
-                *registry,
+                *(s["id"] for s in (rendered or {}).get("sources", []) if s["id"] in registry),
+                *(
+                    key
+                    for key, s in reversed(registry.items())
+                    if s.get("value_kind") == "normative_limit"
+                ),
+                *reversed(registry),
             ]
         )
     )[:source_limit]
     sources = [registry[key] for key in selected]
     _, request = review_messages(question, candidate, sources, provenance, history, summary)
     packet = json.loads(request[-1]["content"])
-    verification = rendered["verification"]
-    packet["previous_answer"] = visible_text(candidate)
-    packet["revision_feedback"] = {
-        key: verification[key]
-        for key in ("status", "reason", "review", "validation", "numeric_check")
-        if key in verification
-    }
-    # Preserve the existing machine-readable numeric feedback contract.
-    validation = verification.get("validation", {})
-    if "numeric_check" in validation:
-        packet["numeric_check"] = validation["numeric_check"]
+    if rendered is not None:
+        verification = rendered["verification"]
+        packet["previous_answer"] = visible_text(candidate)
+        packet["revision_feedback"] = {
+            key: verification[key]
+            for key in ("status", "reason", "review", "validation", "numeric_check")
+            if key in verification
+        }
+        # Preserve the existing machine-readable numeric feedback contract.
+        validation = verification.get("validation", {})
+        if "numeric_check" in validation:
+            packet["numeric_check"] = validation["numeric_check"]
     packet["final_revision"] = final_round
     packet["omitted_evidence_count"] = len(registry) - len(selected)
+    if not include_document_bodies:
+        for document in packet["documents"]:
+            document["result"] = {
+                key: value for key, value in document["result"].items() if key != "data"
+            }
+            document["data_omitted"] = True
+    packet["working_context_note"] = (
+        "Это рабочая выборка уже прочитанных источников. Полные результаты сохранены. "
+        "data_omitted и omitted_evidence_count означают сокращение рабочего контекста, "
+        "а не отсутствие данных в базе. Сохраняй смысл полей, единицы и ограничения. "
+        "История нужна для понимания вопроса и не подтверждает факты."
+    )
     return [
-        {"role": "system", "content": system_prompt(remaining_calls) + "\n" + ANSWER_REVISION_NOTE},
+        {
+            "role": "system",
+            "content": system_prompt(remaining_calls)
+            + ("\n" + ANSWER_REVISION_NOTE if rendered is not None else ""),
+        },
         {"role": "user", "content": json.dumps(packet, ensure_ascii=False)},
     ]
 
@@ -59,6 +81,7 @@ def round_report(candidate, rendered, revision):
         "candidate_text": visible_text(candidate),
         "status": verification["status"],
         "reason": verification["reason"],
+        "source_ids": [source["id"] for source in rendered["sources"]],
         **{key: verification[key] for key in ("review", "validation") if key in verification},
     }
 
@@ -73,6 +96,7 @@ class ReconciliationState:
         self.previous_review = None
         self.best_partial = None
         self.stopped_reason = None
+        self.tools_disabled = False
 
     @staticmethod
     def needs_revision(rendered):
