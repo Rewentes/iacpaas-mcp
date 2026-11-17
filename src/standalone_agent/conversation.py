@@ -18,6 +18,7 @@ from .prompts import (
     summary_prompt,
     system_prompt,
 )
+from .provider_errors import PROVIDER_FAILURES, require_interactive_model, transport_failure
 from .reconciliation import ReconciliationState, revision_messages
 from .review_options import openrouter_review_options, openrouter_sampling_options
 from .runtime import SECRET, WRITES, redact
@@ -184,16 +185,27 @@ class ConversationAgent:
         payload.update(await options(self.model, self.client))
 
         async def request(client):
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json=payload,
-                timeout=60,
-            )
-            response.raise_for_status()
-            if len(response.content) > 1048576:
-                raise ValueError("Provider response exceeds limit")
-            return completion_message(response.json())
+            try:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=payload,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                if len(response.content) > 1048576:
+                    raise ValueError("Provider response exceeds limit")
+                return completion_message(response.json())
+            except ConversationError:
+                raise
+            except httpx.HTTPError as exc:
+                raise transport_failure(exc) from None
+            except ValueError:
+                raise ConversationError(
+                    PROVIDER_FAILURES["provider_response_error"],
+                    "provider_response_error",
+                    diagnostic="provider_payload",
+                ) from None
 
         if self.client is not None:
             return await request(self.client)
@@ -610,6 +622,10 @@ class ConversationAgent:
                 return await self._respond(message, messages, summary, on_event)
         except ConversationError:
             raise
+        except TimeoutError:
+            raise ConversationError(
+                "Истекло общее время обработки вопроса.", "turn_timeout", diagnostic="turn_deadline"
+            ) from None
         except ExceptionGroup as exc:
             known, other = exc.split(ConversationError)
             if known is not None and other is None:
@@ -722,8 +738,10 @@ class ConversationAgent:
             if on_event is not None:
                 await on_event(entry)
 
-        if self.provider is None and not self.api_key.strip():
-            raise ConversationError("OPENROUTER_API_KEY is required", "configuration_error")
+        if self.provider is None:
+            require_interactive_model("openrouter", self.model)
+            if not self.api_key.strip():
+                raise ConversationError("OPENROUTER_API_KEY is required", "configuration_error")
         await emit(
             "status", "Разберу вопрос; если нужны сведения платформы, найду и сверю источники."
         )

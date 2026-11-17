@@ -1,9 +1,11 @@
 """Decode the shared Chat Completions envelope before executing or publishing it."""
 
 from .errors import ConversationError
+from .provider_errors import check_error_envelope
 
 
 def completion_message(data):
+    check_error_envelope(data)
     try:
         choice = data["choices"][0]
         message = choice["message"]
