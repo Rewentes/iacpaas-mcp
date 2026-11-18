@@ -19,6 +19,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
+from iacpaas_mcp.config import backend_from_env
 from standalone_agent.provider_errors import PROVIDER_FAILURES
 
 from .model_settings import PROVIDERS, ModelSettings, SettingsError
@@ -35,6 +36,7 @@ AGENT_FAILURES = {
     "model_refusal": "Провайдер отклонил формирование ответа. Проверенный ответ не сформирован.",
     "provider_unavailable": "Не удалось получить ответ модели. Проверьте доступность провайдера.",
     "turn_timeout": "Истекло общее время обработки вопроса. Ответ не завершён.",
+    "platform_configuration_error": "Для работы с реальной IACPaaS укажите логин и пароль в настройках входа в платформу.",
     "agent_error": "Не удалось завершить обработку запроса к модели или MCP.",
 }
 AGENT_FAILURES.update(PROVIDER_FAILURES)
@@ -173,7 +175,7 @@ def create_app(*, db_path=None, agent=None, bind_host=None, trusted_hosts=None):
                 "backend": "MCP HTTP (backend not verified)"
                 if os.environ.get("MCP_TRANSPORT", "stdio") == "http"
                 else "MCP stdio (IACPaaS; проверка при чтении)"
-                if os.environ.get("IACPAAS_BACKEND", "mock") == "iacpaas"
+                if backend_from_env() == "iacpaas"
                 else "MCP stdio (local mock)",
             }
         )

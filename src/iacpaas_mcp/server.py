@@ -12,6 +12,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import ValidationError
 
+from .config import backend_from_env
 from .domain import DomainError, GraphService
 from .policy import WritePolicy
 from .schemas import Depth, Limit, NodeLimit, Path, Text, ToolResponse
@@ -52,7 +53,7 @@ class PolicyMCP(FastMCP):
 
 
 def create_service(backend=None):
-    backend = backend or os.environ.get("IACPAAS_BACKEND", "mock")
+    backend = backend or backend_from_env()
     if backend == "mock":
         return GraphService()
     if backend == "iacpaas":
@@ -65,12 +66,13 @@ def create_service(backend=None):
 def create_server(
     service=None,
     *,
+    backend=None,
     host="127.0.0.1",
     port=8000,
     max_result_bytes=1_048_576,
     max_argument_bytes=1_048_576,
 ):
-    service = service if service is not None else create_service()
+    service = service if service is not None else create_service(backend)
     backend = getattr(getattr(service, "backend", None), "kind", "mock")
     server = PolicyMCP("iacpaas", host=host, port=port)
     server.max_argument_bytes = max_argument_bytes
@@ -245,7 +247,7 @@ def main(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
-        "--backend", choices=["mock", "iacpaas"], default=os.environ.get("IACPAAS_BACKEND", "mock")
+        "--backend", choices=["mock", "iacpaas"], default=backend_from_env()
     )
     args = parser.parse_args(argv)
     try:
