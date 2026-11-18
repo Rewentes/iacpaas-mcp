@@ -11,18 +11,7 @@ import httpx
 
 from .domain import DomainError
 from .native import normalize_universal
-
-RESOURCE_FIELDS = (
-    "IACPAAS_GASES_PATH",
-    "IACPAAS_GASES_ONTOLOGY_PATH",
-    "IACPAAS_SUBSTANCES_PATH",
-    "IACPAAS_SUBSTANCES_ONTOLOGY_PATH",
-    "IACPAAS_UNITS_PATH",
-    "IACPAAS_CHARACTERISTICS_ONTOLOGY_PATH",
-    "IACPAAS_PROPERTIES_PATH",
-    "IACPAAS_PROPERTIES_ONTOLOGY_PATH",
-    "IACPAAS_TERMS_PATH",
-)
+from .resource_config import resource_paths_from_env
 
 
 class IACPaaSBackend:
@@ -70,15 +59,17 @@ class IACPaaSBackend:
         self._lock = threading.RLock()
 
     @classmethod
-    def from_env(cls, *, username=None, password=None):
+    def from_env(cls, *, username=None, password=None, resources=None):
         try:
             return cls(
                 username=os.environ.get("IACPAAS_USERNAME", "") if username is None else username,
                 password=os.environ.get("IACPAAS_PASSWORD", "") if password is None else password,
                 resources={
-                    field: os.environ[field].strip()
-                    for field in RESOURCE_FIELDS
-                    if os.environ.get(field, "").strip()
+                    field: path.strip()
+                    for field, path in (
+                        resource_paths_from_env() if resources is None else resources
+                    ).items()
+                    if path.strip()
                 },
                 base_url=os.environ.get("IACPAAS_BASE_URL", "https://iacpaas.dvo.ru"),
                 max_export_bytes=int(os.environ.get("IACPAAS_EXPORT_BYTES", str(16 * 1024 * 1024))),

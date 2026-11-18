@@ -114,17 +114,16 @@ def test_check_access_is_read_only_and_never_calls_model(tmp_path, monkeypatch):
         client.post("/api/platform/settings", json={"username": "test", "password": "password"})
         result = client.post("/api/platform/settings/test", json={})
         assert result.status_code == 200 and result.json()["connected"] is True
-    assert calls == [{"username": "test", "password": "password"}, "/fixture"]
+    assert calls[0]['username'] == 'test' and calls[0]['password'] == 'password'
+    assert 'IACPAAS_GASES_ONTOLOGY_PATH' in calls[0]['resources']
+    assert calls[1:] == ["/fixture"]
 
 
-def test_missing_resource_paths_is_configuration_error_without_network(tmp_path, monkeypatch):
+def test_empty_resource_paths_cannot_be_saved_without_network(tmp_path, monkeypatch):
     import gas_web.platform_settings as module
 
     monkeypatch.setenv("IACPAAS_BACKEND", "iacpaas")
     monkeypatch.setenv("MCP_TRANSPORT", "stdio")
-    for field in module.RESOURCE_FIELDS:
-        monkeypatch.delenv(field, raising=False)
-
     def unexpected_request(*args, **kwargs):
         pytest.fail("Missing resource paths must be rejected before login or export")
 
@@ -133,11 +132,10 @@ def test_missing_resource_paths_is_configuration_error_without_network(tmp_path,
     with TestClient(app) as client:
         boot(client)
         client.post("/api/platform/settings", json={"username": "test", "password": "secret"})
-        result = client.post("/api/platform/settings/test", json={})
+        result = client.post("/api/platform/settings", json={
+            "username": "test", "resource_paths": {}})
         assert result.status_code == 400
-        assert result.json()["error"]["code"] == "platform_configuration_error"
-        assert "IACPAAS_GASES_PATH" in result.text
-        assert "ещё не проверялись" in result.text
+        assert "Укажите хотя бы один ресурс" in result.text
         assert client.get("/api/platform/settings").json()["password_set"] is True
 
 
@@ -171,8 +169,10 @@ def test_platform_errors_are_distinct_and_do_not_echo_secrets(tmp_path, monkeypa
         client.post("/api/platform/settings", json={
             "username": "private-login", "password": "private-password"})
         result = client.post("/api/platform/settings/test", json={})
-        assert result.status_code == status
-        assert result.json()["error"]["code"] == "platform_" + code
+        resource_error = code in {'permission_denied', 'not_found', 'invalid_data', 'limit_exceeded'}
+        assert result.status_code == (400 if resource_error else status)
+        assert result.json()["error"]["code"] == (
+            'platform_resources_unavailable' if resource_error else "platform_" + code)
         assert "private-" not in result.text
         if code != "authentication_error":
             assert "Проверьте логин и пароль" not in result.text

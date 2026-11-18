@@ -18,8 +18,11 @@ for (const match of imports) {
 }
 await writeFile(appPath, appSource);
 const appHash = createHash('sha256').update(appSource).digest('hex').slice(0,12);
+const stylesHash = createHash('sha256').update(await readFile(root+'src/gas_web/static/styles.css')).digest('hex').slice(0,12);
 const indexPath = root+'src/gas_web/static/index.html';
-await writeFile(indexPath, (await readFile(indexPath,'utf8')).replace(/src="\/static\/app\.js(?:\?v=[a-f0-9]+)?"/, `src="/static/app.js?v=${appHash}"`));
+await writeFile(indexPath, (await readFile(indexPath,'utf8'))
+  .replace(/src="\/static\/app\.js(?:\?v=[a-f0-9]+)?"/, `src="/static/app.js?v=${appHash}"`)
+  .replace(/href="\/static\/styles\.css(?:\?v=[a-f0-9]+)?"/, `href="/static/styles.css?v=${stylesHash}"`));
 const pkg = JSON.parse(await readFile(root+'frontend/package.json','utf8'));
 await writeFile(root+'src/gas_web/static/ui-build.json',JSON.stringify({framework:'JetBrains Ring UI',dependencies:pkg.dependencies},null,2)+'\n');
 await copyFile(root+'frontend/node_modules/@fontsource/inter/LICENSE',root+'src/gas_web/static/Inter-LICENSE.txt');
