@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+import pytest
 from starlette.testclient import TestClient
 
 from gas_web.app import create_app
@@ -114,3 +115,64 @@ def test_check_access_is_read_only_and_never_calls_model(tmp_path, monkeypatch):
         result = client.post("/api/platform/settings/test", json={})
         assert result.status_code == 200 and result.json()["connected"] is True
     assert calls == [{"username": "test", "password": "password"}, "/fixture"]
+
+
+def test_missing_resource_paths_is_configuration_error_without_network(tmp_path, monkeypatch):
+    import gas_web.platform_settings as module
+
+    monkeypatch.setenv("IACPAAS_BACKEND", "iacpaas")
+    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+    for field in module.RESOURCE_FIELDS:
+        monkeypatch.delenv(field, raising=False)
+
+    def unexpected_request(*args, **kwargs):
+        pytest.fail("Missing resource paths must be rejected before login or export")
+
+    monkeypatch.setattr(module.IACPaaSBackend, "_request", unexpected_request)
+    app = create_app(db_path=tmp_path / "chat.db")
+    with TestClient(app) as client:
+        boot(client)
+        client.post("/api/platform/settings", json={"username": "test", "password": "secret"})
+        result = client.post("/api/platform/settings/test", json={})
+        assert result.status_code == 400
+        assert result.json()["error"]["code"] == "platform_configuration_error"
+        assert "IACPAAS_GASES_PATH" in result.text
+        assert "ещё не проверялись" in result.text
+        assert client.get("/api/platform/settings").json()["password_set"] is True
+
+
+@pytest.mark.parametrize("code,status", [
+    ("authentication_error", 401), ("permission_denied", 403), ("not_found", 404),
+    ("timeout", 504), ("platform_unavailable", 502), ("invalid_data", 502),
+    ("platform_error", 502), ("limit_exceeded", 413),
+])
+def test_platform_errors_are_distinct_and_do_not_echo_secrets(tmp_path, monkeypatch, code, status):
+    import gas_web.platform_settings as module
+    from iacpaas_mcp.domain import DomainError
+
+    monkeypatch.setenv("IACPAAS_BACKEND", "iacpaas")
+    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+
+    class Backend:
+        @classmethod
+        def from_env(cls, **kwargs):
+            return cls()
+
+        def catalog(self):
+            return [{"path": "/fixture"}]
+
+        def get(self, path):
+            raise DomainError(code, "private-login private-password private-token")
+
+    monkeypatch.setattr(module, "IACPaaSBackend", Backend)
+    app = create_app(db_path=tmp_path / "chat.db")
+    with TestClient(app) as client:
+        boot(client)
+        client.post("/api/platform/settings", json={
+            "username": "private-login", "password": "private-password"})
+        result = client.post("/api/platform/settings/test", json={})
+        assert result.status_code == status
+        assert result.json()["error"]["code"] == "platform_" + code
+        assert "private-" not in result.text
+        if code != "authentication_error":
+            assert "Проверьте логин и пароль" not in result.text

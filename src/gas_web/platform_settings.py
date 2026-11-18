@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 from iacpaas_mcp.config import backend_from_env
-from iacpaas_mcp.platform import IACPaaSBackend
+from iacpaas_mcp.domain import DomainError
+from iacpaas_mcp.platform import RESOURCE_FIELDS, IACPaaSBackend
 from standalone_agent.cli import connect
 from standalone_agent.errors import ConversationError
 
@@ -114,13 +115,49 @@ class PlatformSettings:
         if backend_from_env() != 'iacpaas':
             raise SettingsError('Сервер работает с демонстрационными данными. Включите IACPAAS_BACKEND=iacpaas.', status=400)
         profile = self.snapshot(owner_id)
+        if not (profile.username and profile.password):
+            raise SettingsError('Укажите и сохраните логин и пароль IACPaaS.',
+                                code='platform_configuration_error', status=400)
 
         def read():
             backend = IACPaaSBackend.from_env(username=profile.username, password=profile.password)
             backend.get(backend.catalog()[0]['path'])
         try:
             await asyncio.to_thread(read)
+        except DomainError as exc:
+            errors = {
+                'authentication_error': (
+                    'IACPaaS отклонила вход. Проверьте логин и пароль.', 401),
+                'permission_denied': (
+                    'Вход выполнен, но IACPaaS не разрешает чтение настроенного ресурса. '
+                    'Проверьте права доступа и путь ресурса в .env.', 403),
+                'not_found': (
+                    'Настроенный ресурс не найден. Проверьте его путь в .env '
+                    'относительно «Моего фонда» этого пользователя.', 404),
+                'timeout': ('IACPaaS не ответила вовремя. Проверьте соединение с платформой.', 504),
+                'platform_unavailable': (
+                    'Не удалось соединиться с IACPaaS. Проверьте сеть и доступность '
+                    'https://iacpaas.dvo.ru с компьютера, где запущен сервер.', 502),
+                'platform_error': ('IACPaaS сообщила об ошибке обработки запроса.', 502),
+                'invalid_data': ('IACPaaS вернула неподдерживаемые данные ресурса.', 502),
+                'limit_exceeded': (
+                    'Ресурс превышает настроенный лимит загрузки IACPaaS_EXPORT_BYTES.', 413),
+            }
+            if exc.code == 'configuration_error':
+                message = (
+                    'Пути ресурсов IACPaaS не настроены. Укажите в .env хотя бы '
+                    'IACPAAS_GASES_PATH — точный путь базы относительно «Моего фонда». '
+                    'После изменения .env перезапустите сервер. Логин и пароль ещё не проверялись.'
+                    if not any(os.environ.get(field, '').strip() for field in RESOURCE_FIELDS)
+                    else 'Некорректная конфигурация IACPaaS в .env. Проверьте адрес платформы, '
+                    'пути ресурсов и числовые лимиты. Логин и пароль ещё не проверялись.'
+                )
+                raise SettingsError(message, code='platform_configuration_error', status=400) from None
+            message, status = errors.get(exc.code, ('Не удалось прочитать ресурс IACPaaS.', 502))
+            raise SettingsError(message, code='platform_' + exc.code, status=status) from None
         except Exception:
             # Neither upstream exceptions nor credentials cross the API boundary.
-            raise SettingsError('Не удалось войти или прочитать ресурс. Проверьте логин, пароль и права доступа.', code='platform_unavailable') from None
+            raise SettingsError('Не удалось завершить проверку IACPaaS. '
+                                'Это не подтверждает ошибку логина или пароля.',
+                                code='platform_check_failed') from None
         return {'connected': True, 'message': 'Вход выполнен, чтение ресурса IACPaaS доступно.'}
