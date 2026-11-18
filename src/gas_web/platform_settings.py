@@ -6,8 +6,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
+from iacpaas_mcp.config import backend_from_env
 from iacpaas_mcp.platform import IACPaaSBackend
 from standalone_agent.cli import connect
+from standalone_agent.errors import ConversationError
 
 from .model_settings import SettingsError
 
@@ -93,6 +95,8 @@ class PlatformSettings:
 
     def session_factory(self, owner_id):
         profile = self.snapshot(owner_id)
+        if self.local() and backend_from_env() == 'iacpaas' and not (profile.username and profile.password):
+            raise ConversationError('Укажите логин и пароль IACPaaS.', 'platform_configuration_error')
 
         @asynccontextmanager
         async def session():
@@ -107,7 +111,7 @@ class PlatformSettings:
     async def test(self, owner_id):
         if not self.local():
             raise SettingsError('Проверьте вход в настройках удалённого MCP-сервера.', status=400)
-        if os.environ.get('IACPAAS_BACKEND', 'mock') != 'iacpaas':
+        if backend_from_env() != 'iacpaas':
             raise SettingsError('Сервер работает с демонстрационными данными. Включите IACPAAS_BACKEND=iacpaas.', status=400)
         profile = self.snapshot(owner_id)
 

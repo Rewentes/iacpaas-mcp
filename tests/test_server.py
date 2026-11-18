@@ -14,7 +14,7 @@ async def test_catalog_real_mcp_session_has_success_schema():
     assert importlib.util.find_spec("iacpaas_mcp.server") is not None
     from iacpaas_mcp.server import create_server
 
-    async with create_connected_server_and_client_session(create_server()) as session:
+    async with create_connected_server_and_client_session(create_server(backend="mock")) as session:
         tools = {t.name: t for t in (await session.list_tools()).tools}
         tool = tools["list_inforesources"]
         assert tool.outputSchema["properties"]["ok"]["const"] is True
@@ -32,7 +32,7 @@ async def test_read_surface_and_errors_are_structured():
 
     from iacpaas_mcp.server import create_server
 
-    async with create_connected_server_and_client_session(create_server()) as session:
+    async with create_connected_server_and_client_session(create_server(backend="mock")) as session:
         for name, args in [
             ("get_inforesource", {"path": "/demo/university"}),
             ("get_subgraph", {"path": "/demo/university", "depth": 1}),
@@ -58,7 +58,7 @@ async def test_write_gate_direct_calls_and_opt_in_are_server_side(monkeypatch, c
     from iacpaas_mcp.server import create_server
 
     monkeypatch.delenv("IACPAAS_ALLOW_WRITES", raising=False)
-    server = create_server()
+    server = create_server(backend="mock")
     denied = await server.call_tool(
         "update_concept", {"path": "/demo/university", "concept_id": "root", "comment": "changed"}
     )
@@ -71,7 +71,7 @@ async def test_write_gate_direct_calls_and_opt_in_are_server_side(monkeypatch, c
         await server.call_tool("update_concept", {"path": "/demo/university", "concept_id": "root"})
     ).isError
     with caplog.at_level("INFO"):
-        async with create_connected_server_and_client_session(create_server()) as session:
+        async with create_connected_server_and_client_session(create_server(backend="mock")) as session:
             tools = {t.name: t for t in (await session.list_tools()).tools}
             assert tools["update_concept"].annotations.readOnlyHint is False
             assert tools["import_inforesource"].annotations.destructiveHint is True
@@ -98,11 +98,11 @@ async def test_validation_and_byte_budgets_precede_unbounded_work():
 
     from iacpaas_mcp.server import create_server
 
-    server = create_server(max_result_bytes=256)
+    server = create_server(backend="mock", max_result_bytes=256)
     result = await server.call_tool("export_inforesource", {"path": "/demo/university"})
     assert result.isError
     assert json.loads(result.content[0].text)["code"] == "limit_exceeded"
-    async with create_connected_server_and_client_session(create_server()) as session:
+    async with create_connected_server_and_client_session(create_server(backend="mock")) as session:
         exported = await session.call_tool("export_inforesource", {"path": "/demo/university"})
         result = await session.call_tool(
             "validate_resource", {"payload": exported.structuredContent["data"]}
@@ -118,7 +118,7 @@ async def test_validation_and_byte_budgets_precede_unbounded_work():
         "get_subgraph", {"path": "x", "depth": 99}
     )
     assert json.loads(result.content[0].text)["code"] == "invalid_data"
-    result = await create_server(max_argument_bytes=64).call_tool(
+    result = await create_server(backend="mock", max_argument_bytes=64).call_tool(
         "validate_resource", {"payload": {"x": "a" * 100}}
     )
     assert json.loads(result.content[0].text)["code"] == "limit_exceeded"
@@ -134,7 +134,7 @@ async def test_cli_stdio_real_subprocess_session():
 
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "iacpaas_mcp.server"],
+        args=["-m", "iacpaas_mcp.server", "--backend", "mock"],
         env={**os.environ, "PYTHONPATH": "src"},
     )
     async with stdio_client(params) as (read, write):
@@ -202,7 +202,7 @@ async def test_mock_import_roundtrip_requires_startup_opt_in(monkeypatch):
 
     monkeypatch.setenv("IACPAAS_ALLOW_WRITES", "1")
     monkeypatch.setenv("IACPAAS_WRITABLE_PREFIX", "/demo/")
-    async with create_connected_server_and_client_session(create_server()) as session:
+    async with create_connected_server_and_client_session(create_server(backend="mock")) as session:
         exported = await session.call_tool("export_inforesource", {"path": "/demo/university"})
         payload = exported.structuredContent["data"]
         payload["path"] = "/demo/imported"

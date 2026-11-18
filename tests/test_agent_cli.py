@@ -4,6 +4,12 @@ import httpx
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def explicit_mock_backend(monkeypatch):
+    """CLI scenarios in this module exercise only the synthetic graph."""
+    monkeypatch.setenv("IACPAAS_BACKEND", "mock")
+
+
 @pytest.mark.asyncio
 async def test_openai_sends_discovered_schema_and_linked_tool_messages():
     from mcp.types import Tool

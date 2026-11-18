@@ -9,9 +9,9 @@ async def test_http_auth_required_and_lifespan_initializes_session(monkeypatch):
     assert hasattr(server, "create_http_app")
     monkeypatch.delenv("MCP_HTTP_TOKEN", raising=False)
     with pytest.raises(ValueError, match="MCP_HTTP_TOKEN"):
-        server.create_http_app(server.create_server())
+        server.create_http_app(server.create_server(backend="mock"))
     monkeypatch.setenv("MCP_HTTP_TOKEN", "local-test-token")
-    instance = server.create_server()
+    instance = server.create_server(backend="mock")
     app = server.create_http_app(instance)
     async with (
         instance.session_manager.run(),
@@ -59,9 +59,9 @@ def test_http_refuses_nonlocal_binding_without_opt_in(monkeypatch):
     monkeypatch.setenv("MCP_HTTP_TOKEN", "test")
     monkeypatch.delenv("MCP_HTTP_ALLOW_REMOTE", raising=False)
     with pytest.raises(ValueError, match="localhost"):
-        create_http_app(create_server(host="0.0.0.0"))
+        create_http_app(create_server(backend="mock", host="0.0.0.0"))
     monkeypatch.setenv("MCP_HTTP_ALLOW_REMOTE", "1")
-    assert create_http_app(create_server(host="0.0.0.0")) is not None
+    assert create_http_app(create_server(backend="mock", host="0.0.0.0")) is not None
 
 
 def test_sdk_http_factory_cannot_bypass_auth(monkeypatch):
@@ -69,7 +69,7 @@ def test_sdk_http_factory_cannot_bypass_auth(monkeypatch):
 
     monkeypatch.delenv("MCP_HTTP_TOKEN", raising=False)
     with pytest.raises(ValueError, match="MCP_HTTP_TOKEN"):
-        create_server().streamable_http_app()
+        create_server(backend="mock").streamable_http_app()
 
 
 @pytest.fixture
@@ -93,7 +93,7 @@ async def test_real_http_cli_session_and_graceful_shutdown():
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     process = subprocess.Popen(
-        [sys.executable, "-m", "iacpaas_mcp.server", "--transport", "http", "--port", str(port)],
+        [sys.executable, "-m", "iacpaas_mcp.server", "--backend", "mock", "--transport", "http", "--port", str(port)],
         env={**os.environ, "PYTHONPATH": "src", "MCP_HTTP_TOKEN": "http-session-test"},
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
