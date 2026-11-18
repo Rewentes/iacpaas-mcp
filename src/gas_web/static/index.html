@@ -7,8 +7,8 @@
   <title>Газовые ресурсы · IACPaaS</title>
   <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/ring.css">
-  <link rel="stylesheet" href="/static/styles.css">
-  <script type="module" src="/static/app.js?v=85bd2f89ff72"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=194ef0b53063">
+  <script type="module" src="/static/app.js?v=86478547ebe5"></script>
 </head>
 <body>
   <a class="skip-link" href="#prompt">К вводу сообщения</a>
@@ -107,9 +107,32 @@
       <input id="platform-password" name="password" type="password" autocomplete="new-password" maxlength="4096">
       <p class="muted">Оставьте пароль пустым, чтобы сохранить текущий. Данные хранятся на сервере для этого пользователя браузера и не передаются модели.</p>
       <label class="checkbox-label"><input id="platform-clear-password" type="checkbox"> Удалить сохранённый пароль</label>
+      <details class="platform-resources" open>
+        <summary>Ресурсы и онтологии IACPaaS</summary>
+        <p class="muted" id="platform-path-help">Пути относительно «Моего фонда». Типовые пути ведут в «Загрузки»; измените их, если ресурсы находятся в другой папке. Пустое поле исключает ресурс из каталога агента.</p>
+        <label for="platform-gases">База технологических газов</label>
+        <input id="platform-gases" data-resource-key="IACPAAS_GASES_PATH" maxlength="1024" spellcheck="false" aria-describedby="platform-path-help">
+        <label for="platform-gases-ontology">Онтология базы технологических газов</label>
+        <input id="platform-gases-ontology" data-resource-key="IACPAAS_GASES_ONTOLOGY_PATH" maxlength="1024" spellcheck="false">
+        <label for="platform-substances">База химических элементов и веществ</label>
+        <input id="platform-substances" data-resource-key="IACPAAS_SUBSTANCES_PATH" maxlength="1024" spellcheck="false">
+        <label for="platform-substances-ontology">Онтология химических элементов и веществ (если отдельная)</label>
+        <input id="platform-substances-ontology" data-resource-key="IACPAAS_SUBSTANCES_ONTOLOGY_PATH" maxlength="1024" spellcheck="false" placeholder="Не использовать отдельный ресурс">
+        <label for="platform-units">Система единиц физических величин</label>
+        <input id="platform-units" data-resource-key="IACPAAS_UNITS_PATH" maxlength="1024" spellcheck="false">
+        <label for="platform-characteristics">Онтология описания характеристик и их значений</label>
+        <input id="platform-characteristics" data-resource-key="IACPAAS_CHARACTERISTICS_ONTOLOGY_PATH" maxlength="1024" spellcheck="false">
+        <label for="platform-properties">База свойств материалов</label>
+        <input id="platform-properties" data-resource-key="IACPAAS_PROPERTIES_PATH" maxlength="1024" spellcheck="false">
+        <label for="platform-properties-ontology">Онтология базы свойств материалов</label>
+        <input id="platform-properties-ontology" data-resource-key="IACPAAS_PROPERTIES_ONTOLOGY_PATH" maxlength="1024" spellcheck="false">
+        <label for="platform-terms">Терминологический справочник</label>
+        <input id="platform-terms" data-resource-key="IACPAAS_TERMS_PATH" maxlength="1024" spellcheck="false">
+        <button id="platform-default-paths" type="button">Заполнить типовые пути</button>
+      </details>
       <p id="platform-status" role="status" aria-live="polite"></p>
-      <div class="settings-actions"><button id="platform-save" type="submit">Сохранить вход</button><button id="platform-test" type="button">Проверить доступ</button></div>
-      <p class="muted">Проверка читает один ресурс IACPaaS. Запросов к модели нет. По HTTP вводите пароль только в доверенной сети.</p>
+      <div class="settings-actions"><button id="platform-save" type="submit">Сохранить вход и ресурсы</button><button id="platform-test" type="button">Проверить доступ</button></div>
+      <p class="muted">Проверка читает все указанные ресурсы, включая онтологии. Запросов к модели нет. По HTTP вводите пароль только в доверенной сети.</p>
     </form>
   </dialog>
   <dialog id="delete-dialog" class="delete-dialog" aria-labelledby="delete-title"><form method="dialog"><h2 id="delete-title">Удалить диалог?</h2><p>Сообщения и рабочий контекст этого диалога будут удалены. Отменить удаление нельзя.</p><div class="settings-actions"><button value="cancel" autofocus>Отмена</button><button value="delete" class="danger">Удалить</button></div></form></dialog>
