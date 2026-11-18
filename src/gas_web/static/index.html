@@ -8,7 +8,7 @@
   <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/ring.css">
   <link rel="stylesheet" href="/static/styles.css">
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/app.js?v=85bd2f89ff72"></script>
 </head>
 <body>
   <a class="skip-link" href="#prompt">К вводу сообщения</a>
@@ -63,7 +63,12 @@
     <form id="settings-form">
       <div class="appearance-section"><label for="theme-select">Оформление</label><select id="theme-select"><option value="system">Как в системе</option><option value="light">Светлая тема</option><option value="dark">Тёмная тема</option></select><p class="muted">Выбор сохраняется в этом браузере.</p></div>
       <label for="settings-provider">Провайдер</label>
-      <select id="settings-provider"><option value="openrouter">OpenRouter</option><option value="openai">OpenAI API</option><option value="codex">Codex · подписка ChatGPT</option></select>
+      <select id="settings-provider"><option value="openrouter">OpenRouter</option><option value="openai">OpenAI API</option><option value="custom">OpenAI-совместимый API · свой адрес</option><option value="codex">Codex · подписка ChatGPT</option></select>
+      <div id="api-endpoint-fields" hidden>
+        <label for="settings-base-url">Адрес API</label>
+        <input id="settings-base-url" type="url" maxlength="2048" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false" aria-describedby="endpoint-help">
+        <p id="endpoint-help" class="muted">Введите базовый адрес или ссылку на /chat/completions. Сервис должен поддерживать OpenAI Chat Completions и вызов инструментов. При смене адреса ключ нужно указать заново.</p>
+      </div>
       <label for="settings-model">Модель</label>
       <div class="model-input-row"><input id="settings-model" list="settings-models" maxlength="200" required autocomplete="off" aria-describedby="catalog-help"><button id="models-refresh" type="button">Обновить список</button></div>
       <datalist id="settings-models"></datalist>

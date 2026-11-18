@@ -28,16 +28,18 @@ function Picker({native, list, editable}) {
   const [, update] = useState(0);
   const [dark, setDark] = useState(isDark);
   const [query, setQuery] = useState('');
+  const [inputRevision, resetInput] = useState(0);
   useEffect(() => {
     const refresh = () => update(value => value + 1);
     const bridge = bridges.get(native);
     bridge.refresh = refresh;
+    bridge.resetInput = () => { setQuery(''); resetInput(value => value + 1); };
     const observer = new MutationObserver(refresh);
     observer.observe(native, {childList:true, subtree:true, attributes:true, attributeFilter:['disabled','selected']});
     if (list) observer.observe(list, {childList:true, subtree:true});
     const theme = () => setDark(isDark());
     window.addEventListener('iacpaas-theme', theme);
-    return () => { observer.disconnect(); bridge.refresh = null; window.removeEventListener('iacpaas-theme', theme); };
+    return () => { observer.disconnect(); bridge.refresh = null; bridge.resetInput = null; window.removeEventListener('iacpaas-theme', theme); };
   }, [native, list]);
   const catalogue = [...(list || native).querySelectorAll('option')].map(option => ({key:option.value, label:option.textContent}));
   const matching = query ? catalogue.filter(item=>(item.key+' '+item.label).toLocaleLowerCase().includes(query.toLocaleLowerCase())) : catalogue;
@@ -48,9 +50,9 @@ function Picker({native, list, editable}) {
     native.dispatchEvent(new Event(editable ? 'input' : 'change', {bubbles:true}));
   };
   return <ThemeProvider theme={dark ? Theme.DARK : Theme.LIGHT} passToPopups className="ring-picker-theme">
-    <Select id={native.id+'-control'} type={editable ? Select.Type.INPUT : Select.Type.BUTTON}
+    <Select key={editable ? inputRevision : undefined} id={native.id+'-control'} type={editable ? Select.Type.INPUT : Select.Type.BUTTON}
       data={data} selected={selected} disabled={native.disabled} height="L" size={Select.Size.FULL}
-      label={editable ? null : native.getAttribute('aria-label') || 'Выберите значение'} filter={native.id!=='theme-select'}
+      label={editable ? '' : native.getAttribute('aria-label') || 'Выберите значение'} filter={native.id!=='theme-select'}
       inputPlaceholder={editable ? 'Название или ID модели' : 'Поиск…'}
       maxHeight={320} minWidth={native.id==='model-select' ? 280 : 220}
       notFoundMessage={editable ? 'Введите ID и нажмите Enter' : 'Ничего не найдено'}
@@ -87,12 +89,12 @@ function enhanceSelect(native, list=null) {
   if (editable) native.removeAttribute('required');
   const prototype = editable ? HTMLInputElement.prototype : HTMLSelectElement.prototype;
   const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
-  const bridge = {refresh:null, setRaw:value => descriptor.set.call(native,value)};
+  const bridge = {refresh:null, resetInput:null, setRaw:value => descriptor.set.call(native,value)};
   bridges.set(native, bridge);
   Object.defineProperty(native, 'value', {
     configurable:true,
     get:()=>descriptor.get.call(native),
-    set:value=>{ descriptor.set.call(native,value); bridge.refresh?.(); },
+    set:value=>{ const changed = descriptor.get.call(native) !== String(value); descriptor.set.call(native,value); if (editable && changed) bridge.resetInput?.(); bridge.refresh?.(); },
   });
   native.focus = options => host.querySelector('input,[role=combobox]')?.focus(options);
   for (const label of document.querySelectorAll('label')) {

@@ -21,7 +21,7 @@ from starlette.routing import Route
 
 from standalone_agent.provider_errors import PROVIDER_FAILURES
 
-from .model_settings import ModelSettings, SettingsError
+from .model_settings import PROVIDERS, ModelSettings, SettingsError
 from .platform_settings import PlatformSettings
 from .storage import Conflict, Storage
 
@@ -227,16 +227,19 @@ def create_app(*, db_path=None, agent=None, bind_host=None, trusted_hosts=None):
         if request.method == "POST":
             try:
                 settings.save(owner["id"], await json_body(request))
-            except ValueError:
+            except ValueError as exc:
                 raise APIError(
                     400,
                     {
                         "code": "invalid_request",
-                        "message": "Некорректные настройки модели.",
+                        "message": str(exc),
                         "retryable": False,
                     },
                 ) from None
-        return JSONResponse(await settings.public(owner["id"]))
+        selected = request.query_params.get("provider") if request.method == "GET" else None
+        if selected is not None and selected not in {p["id"] for p in PROVIDERS}:
+            raise APIError(400, {"code": "invalid_request", "message": "Неизвестный провайдер.", "retryable": False})
+        return JSONResponse(await settings.public(owner["id"], selected))
 
     async def platform_settings(request):
         owner = authenticate(request)
@@ -576,7 +579,7 @@ def create_app(*, db_path=None, agent=None, bind_host=None, trusted_hosts=None):
         path = Path(__file__).parent / "static" / filename
         if not path.is_file():
             raise HTTPException(404)
-        return FileResponse(path)
+        return FileResponse(path, headers={"Cache-Control": "no-cache"})
 
     async def http_error(request, exc):
         detail = (

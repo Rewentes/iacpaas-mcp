@@ -19,9 +19,12 @@ from standalone_agent.provider_errors import (
 )
 from standalone_agent.review_options import openrouter_review_options, openrouter_sampling_options
 
+from .api_endpoint import normalize_base_url
+
 PROVIDERS = [
     {"id": "openrouter", "name": "OpenRouter", "auth_type": "api_key"},
     {"id": "openai", "name": "OpenAI API", "auth_type": "api_key"},
+    {"id": "custom", "name": "OpenAI-совместимый API", "auth_type": "api_key"},
     {"id": "codex", "name": "Codex / ChatGPT", "auth_type": "chatgpt"},
 ]
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
@@ -41,12 +44,13 @@ def reject_credential_echo(value, key):
         raise ValueError("Provider returned a credential")
 
 
-async def api_request(provider, path, *, api_key="", payload=None):
+async def api_request(provider, path, *, api_key="", payload=None, base_url=None):
+    endpoint = normalize_base_url(base_url) if provider == "custom" else BASE_URL[provider]
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as client:
         async with client.stream(
             "GET" if payload is None else "POST",
-            BASE_URL[provider] + path,
+            endpoint + path,
             headers=headers,
             json=payload,
             timeout=60,
@@ -67,9 +71,13 @@ class Profile:
     model: str
     api_key: str = field(repr=False)
     connection_status: str = "not_configured"
+    base_url: str | None = None
 
     def signature(self):
-        return hashlib.sha256(json.dumps([self.model, self.api_key]).encode()).hexdigest()
+        values = [self.model, self.api_key]
+        if self.provider == "custom":
+            values.append(self.base_url)
+        return hashlib.sha256(json.dumps(values).encode()).hexdigest()
 
 
 class ModelSettings:
@@ -83,6 +91,10 @@ class ModelSettings:
                 owner_id TEXT NOT NULL REFERENCES owners(id), provider TEXT NOT NULL,
                 model TEXT NOT NULL, api_key TEXT, connection_status TEXT NOT NULL,
                 PRIMARY KEY(owner_id,provider))""")
+            if "base_url" not in {
+                row[1] for row in db.execute("PRAGMA table_info(model_profiles)")
+            }:
+                db.execute("ALTER TABLE model_profiles ADD COLUMN base_url TEXT")
 
     def snapshot(self, owner_id, provider=None):
         with self.store.connect() as db:
@@ -92,7 +104,7 @@ class ModelSettings:
                 ).fetchone()
                 provider = row[0] if row else "openrouter"
             row = db.execute(
-                "SELECT model,api_key,connection_status FROM model_profiles WHERE owner_id=? AND provider=?",
+                "SELECT model,api_key,connection_status,base_url FROM model_profiles WHERE owner_id=? AND provider=?",
                 (owner_id, provider),
             ).fetchone()
         key = (
@@ -103,21 +115,24 @@ class ModelSettings:
         profile = Profile(
             owner_id,
             provider,
-            row["model"] if row else DEFAULT_MODEL,
+            row["model"] if row else DEFAULT_MODEL if provider == "openrouter" else "",
             key,
+            base_url=row["base_url"] if row and provider == "custom" else BASE_URL.get(provider),
         )
-        status = "configured" if key else "not_configured"
+        status = (
+            "configured" if key or provider == "custom" and profile.base_url else "not_configured"
+        )
         if row and row["connection_status"] in (
             "connected:" + profile.signature(),
             "error:" + profile.signature(),
         ):
             status = row["connection_status"].split(":")[0]
-        return Profile(owner_id, provider, profile.model, key, status)
+        return Profile(owner_id, provider, profile.model, key, status, profile.base_url)
 
     def save(self, owner_id, body):
         provider, model = body.get("provider"), body.get("model")
         if (
-            set(body) - {"provider", "model", "api_key", "clear_api_key"}
+            set(body) - {"provider", "model", "api_key", "clear_api_key", "base_url"}
             or not isinstance(provider, str)
             or provider not in {p["id"] for p in PROVIDERS}
             or not isinstance(model, str)
@@ -126,6 +141,8 @@ class ModelSettings:
             raise ValueError("Укажите провайдера и модель.")
         if is_batch_model(provider, model):
             raise ValueError(PROVIDER_FAILURES["provider_mode_unsupported"])
+        if provider != "custom" and body.get("base_url"):
+            raise ValueError("Для своего адреса выберите OpenAI-совместимый API.")
         key = body.get("api_key", "")
         clear = body.get("clear_api_key", False)
         if (
@@ -143,10 +160,17 @@ class ModelSettings:
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute(
-                "SELECT api_key FROM model_profiles WHERE owner_id=? AND provider=?",
+                "SELECT api_key,base_url FROM model_profiles WHERE owner_id=? AND provider=?",
                 (owner_id, provider),
             ).fetchone()
             stored_key = old[0] if old else None
+            base_url = (
+                normalize_base_url(body.get("base_url", old["base_url"] if old else None))
+                if provider == "custom"
+                else None
+            )
+            if provider == "custom" and (old is None or base_url != old["base_url"]):
+                stored_key = ""
             if clear:
                 stored_key = ""
             elif key:
@@ -157,19 +181,20 @@ class ModelSettings:
                 else os.environ.get(KEY_ENV.get(provider, ""), "")
             )
             db.execute(
-                "INSERT OR REPLACE INTO model_profiles VALUES (?,?,?,?,?)",
+                "INSERT OR REPLACE INTO model_profiles (owner_id,provider,model,api_key,connection_status,base_url) VALUES (?,?,?,?,?,?)",
                 (
                     owner_id,
                     provider,
                     model,
                     stored_key,
-                    "configured" if effective else "not_configured",
+                    "configured" if effective or base_url else "not_configured",
+                    base_url,
                 ),
             )
             db.execute("INSERT OR REPLACE INTO model_selection VALUES (?,?)", (owner_id, provider))
 
-    async def public(self, owner_id):
-        profile = self.snapshot(owner_id)
+    async def public(self, owner_id, provider=None):
+        profile = self.snapshot(owner_id, provider)
         unavailable = False
         try:
             codex = await self.codex_status(owner_id)
@@ -188,6 +213,7 @@ class ModelSettings:
         return {
             "provider": profile.provider,
             "model": profile.model,
+            "base_url": profile.base_url or "",
             "api_key_set": bool(profile.api_key),
             "connection_status": status,
             "providers": PROVIDERS,
@@ -208,7 +234,10 @@ class ModelSettings:
                 rows = await self.codex_pool().models(owner_id)
             else:
                 data = await api_request(
-                    provider, "/models", api_key=profile.api_key if provider == "openai" else ""
+                    provider,
+                    "/models",
+                    api_key=profile.api_key if provider in {"openai", "custom"} else "",
+                    **({"base_url": profile.base_url} if provider == "custom" else {}),
                 )
                 rows = data["data"]
             reject_credential_echo(rows, profile.api_key)
@@ -238,6 +267,17 @@ class ModelSettings:
 
     def provider(self, profile, *, output_tokens=None, review=False):
         require_interactive_model(profile.provider, profile.model)
+        if not profile.model:
+            raise ConversationError(
+                PROVIDER_FAILURES["provider_model_required"], "provider_model_required"
+            )
+        if profile.provider == "custom":
+            try:
+                normalize_base_url(profile.base_url)
+            except ValueError:
+                raise ConversationError(
+                    PROVIDER_FAILURES["provider_endpoint_required"], "provider_endpoint_required"
+                ) from None
         if output_tokens is None:
             output_tokens = int(os.environ.get("AGENT_OUTPUT_RESERVE", "4096"))
         if profile.provider == "codex":
@@ -248,7 +288,7 @@ class ModelSettings:
                 )
 
             return codex_complete
-        if not profile.api_key:
+        if not profile.api_key and profile.provider != "custom":
             raise ConversationError(
                 "Сохраните API-ключ выбранного провайдера.", "configuration_error"
             )
@@ -258,14 +298,24 @@ class ModelSettings:
             if profile.provider == "openrouter":
                 options = openrouter_review_options if review else openrouter_sampling_options
                 payload.update(await options(profile.model))
-            payload["max_completion_tokens" if profile.provider == "openai" else "max_tokens"] = (
-                output_tokens
-            )
+            payload[
+                "max_completion_tokens"
+                if profile.provider == "openai"
+                or (
+                    profile.provider == "custom"
+                    and urlsplit(profile.base_url).hostname == "api.openai.com"
+                )
+                else "max_tokens"
+            ] = output_tokens
             if tools:
                 payload.update(tools=tools, tool_choice="auto")
             try:
                 data = await api_request(
-                    profile.provider, "/chat/completions", api_key=profile.api_key, payload=payload
+                    profile.provider,
+                    "/chat/completions",
+                    api_key=profile.api_key,
+                    payload=payload,
+                    **({"base_url": profile.base_url} if profile.provider == "custom" else {}),
                 )
                 reject_credential_echo(data, profile.api_key)
                 return completion_message(data)
@@ -288,8 +338,8 @@ class ModelSettings:
             if self.snapshot(profile.owner_id, profile.provider) != profile:
                 return
             db.execute(
-                """INSERT INTO model_profiles (owner_id,provider,model,api_key,connection_status)
-                VALUES (?,?,?,?,?) ON CONFLICT(owner_id,provider) DO UPDATE
+                """INSERT INTO model_profiles (owner_id,provider,model,api_key,connection_status,base_url)
+                VALUES (?,?,?,?,?,?) ON CONFLICT(owner_id,provider) DO UPDATE
                 SET connection_status=excluded.connection_status""",
                 (
                     profile.owner_id,
@@ -297,6 +347,7 @@ class ModelSettings:
                     profile.model,
                     None,
                     status + ":" + profile.signature(),
+                    profile.base_url if profile.provider == "custom" else None,
                 ),
             )
 

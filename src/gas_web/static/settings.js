@@ -10,12 +10,14 @@ export function initSettings(api) {
   let saved, busy = false, catalogVersion = 0;
   let auth = null, authVersion = 0, pollTimer = null, polls = 0, pollDeadline = 0;
   let codexTestedModel = null;
+  let draftVersion = 0;
   const catalogs = new Map();
   const select = $('model-select');
   const dialog = $('settings-dialog');
   const provider = $('settings-provider');
   const model = $('settings-model');
   const key = $('settings-key');
+  const baseUrl = $('settings-base-url');
   const clearKey = $('settings-clear-key');
   const notice = text => { $('model-notice').textContent = text; };
   function errorText(error = null) {
@@ -23,11 +25,12 @@ export function initSettings(api) {
     $('settings-error').textContent = error?.message || '';
   }
   function dirty() {
-    return !saved || provider.value !== saved.provider || model.value.trim() !== saved.model || !!key.value || clearKey.checked;
+    return !saved || provider.value !== saved.provider || model.value.trim() !== saved.model ||
+      (provider.value === 'custom' && baseUrl.value.trim() !== saved.base_url) || !!key.value || clearKey.checked;
   }
   function controls() {
     select.disabled = busy || !saved;
-    for (const id of ['settings-provider', 'settings-model', 'settings-key', 'settings-clear-key', 'settings-save', 'models-refresh']) $(id).disabled = busy;
+    for (const id of ['settings-provider', 'settings-base-url', 'settings-model', 'settings-key', 'settings-clear-key', 'settings-save', 'models-refresh']) $(id).disabled = busy;
     key.disabled = busy || provider.value === 'codex';
     clearKey.disabled = busy || provider.value === 'codex';
     $('settings-test').disabled = busy || dirty();
@@ -56,7 +59,7 @@ export function initSettings(api) {
   }
   function render(profile) {
     saved = profile;
-    const items = catalogs.get(profile.provider) || [];
+    const items = catalogs.get(profile.provider === 'custom' ? `custom:${profile.base_url}` : profile.provider) || [];
     select.replaceChildren(option(profile.model, profile.model_warning ? `${profile.model} · не подходит для чата` : profile.model), ...items.filter(item => item.id !== profile.model).map(item => option(item.id, item.name || item.id)));
     select.value = profile.model;
     $('model').textContent = `Модель: ${profile.model}`;
@@ -67,10 +70,15 @@ export function initSettings(api) {
   }
   async function catalog(id) {
     const version = ++catalogVersion;
+    if (id === 'custom' && (saved?.provider !== id || dirty())) {
+      $('catalog-status').textContent = 'Сохраните адрес API, ключ и ID модели перед загрузкой списка. ID можно ввести вручную.';
+      return;
+    }
+    const cacheKey = id === 'custom' ? `custom:${saved.base_url}` : id;
     if (dialog.open) $('catalog-status').textContent = 'Загрузка моделей…';
     try {
       const data = await api.models(id);
-      catalogs.set(id, data.items);
+      catalogs.set(cacheKey, data.items);
       if (saved?.provider === id) render(saved);
       if (version !== catalogVersion || !dialog.open || provider.value !== id) return;
       $('settings-models').replaceChildren(...data.items.map(item => option(item.id, item.name || item.id)));
@@ -90,6 +98,7 @@ export function initSettings(api) {
   function fill() {
     provider.value = saved.provider;
     model.value = saved.model;
+    baseUrl.value = saved.base_url || '';
     key.value = ''; clearKey.checked = false;
     mode(); status(); controls();
   }
@@ -107,6 +116,10 @@ export function initSettings(api) {
     const subscription = provider.value === 'codex';
     $('api-key-fields').hidden = subscription;
     $('codex-auth').hidden = !subscription;
+    $('api-endpoint-fields').hidden = provider.value !== 'custom';
+    $('key-help').textContent = provider.value === 'custom'
+      ? 'Ключ можно не задавать, если сервис не требует авторизации. Пустое поле сохраняет прежний ключ для того же адреса; при смене адреса укажите ключ заново.'
+      : 'Оставьте поле пустым, чтобы сохранить текущий ключ.';
   }
   function renderAuth(value) {
     if (!value.connected) codexTestedModel = null;
@@ -138,14 +151,16 @@ export function initSettings(api) {
     }
   }
   async function persist(body) {
-    await api.saveSettings(body);
+    const confirmed = await api.saveSettings(body);
     key.value = ''; clearKey.checked = false;
     const profile = await api.settings();
     if (profile.provider !== body.provider || profile.model !== body.model ||
-        (body.clear_api_key && profile.api_key_set) || (body.api_key && !profile.api_key_set)) {
+        (body.clear_api_key && profile.api_key_set) || (body.api_key && !profile.api_key_set) ||
+        (body.provider === 'custom' && profile.base_url !== confirmed.base_url)) {
       throw new Error('Сервер не подтвердил сохранение настроек. Обновите страницу.');
     }
     render(profile);
+    if (body.provider === 'custom') baseUrl.value = profile.base_url;
   }
   select.addEventListener('change', async () => {
     if (!saved || busy) return;
@@ -175,14 +190,26 @@ export function initSettings(api) {
     const target = $('sidebar').inert ? $('nav-toggle') : $('settings-open');
     target.focus({preventScroll:true});
   });
-  provider.addEventListener('change', () => {
+  provider.addEventListener('change', async () => {
+    const version = ++draftVersion;
+    const selectedProvider = provider.value;
     key.value = ''; clearKey.checked = false; model.value = provider.value === saved?.provider ? saved.model : '';
+    baseUrl.value = provider.value === saved?.provider ? saved.base_url || '' : '';
     stopPolling(); clearDevice(); mode();
     $('settings-models').replaceChildren();
-    errorText(); status(); controls(); catalog(provider.value);
+    errorText(); status(); controls();
+    try {
+      const draft = await api.settings(selectedProvider);
+      if (version !== draftVersion || provider.value !== selectedProvider || !dialog.open) return;
+      model.value = draft.model;
+      baseUrl.value = draft.base_url || '';
+      key.placeholder = draft.api_key_set ? 'Ключ сохранён. Введите новый для замены.' : 'Вставьте API-ключ';
+    } catch (error) { if (version === draftVersion) errorText(error); }
+    if (version !== draftVersion) return;
+    status(); controls(); catalog(provider.value);
     if (provider.value === 'codex') refreshAuth(authVersion);
   });
-  for (const input of [model, key, clearKey]) input.addEventListener('input', () => { status(); controls(); });
+  for (const input of [model, baseUrl, key, clearKey]) input.addEventListener('input', () => { ++draftVersion; status(); controls(); });
   $('models-refresh').addEventListener('click', () => catalog(provider.value));
   $('codex-login').addEventListener('click', async () => {
     if (busy || provider.value !== 'codex' || !auth?.installed || auth.connected) return;
@@ -222,6 +249,10 @@ export function initSettings(api) {
     if (busy) return;
     const body = {provider: provider.value, model: model.value.trim()};
     if (!body.model) { errorText(new Error('Введите ID модели.')); model.focus(); return; }
+    if (body.provider === 'custom') {
+      body.base_url = baseUrl.value.trim();
+      if (!body.base_url) { errorText(new Error('Введите адрес API.')); baseUrl.focus(); return; }
+    }
     if (body.provider !== 'codex') {
       if (clearKey.checked) body.clear_api_key = true;
       else if (key.value.trim()) body.api_key = key.value.trim();
