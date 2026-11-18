@@ -11,6 +11,7 @@ WORKDIR /ui/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY frontend ./
+COPY src/gas_web/static /ui/src/gas_web/static
 RUN node build.mjs
 
 FROM python:3.14-slim@sha256:af8a5aa14780025dbfbcfbc81bd8a91ebd87711dd5b0f48ed71090949dd7cb1d AS build

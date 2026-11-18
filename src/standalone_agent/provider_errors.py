@@ -5,6 +5,8 @@ import httpx
 from .errors import ConversationError
 
 PROVIDER_FAILURES = {
+    "provider_endpoint_required": "Укажите адрес OpenAI-совместимого API в настройках.",
+    "provider_model_required": "Выберите модель или введите её ID в настройках.",
     "provider_mode_unsupported": "Выбрана пакетная модель (:batch). Для этого чата выберите обычную версию без :batch в настройках.",
     "provider_auth_error": "Провайдер отклонил авторизацию (HTTP 401). Проверьте ключ и права доступа в настройках.",
     "provider_access_denied": "Провайдер запретил запрос (HTTP 403). Возможны ограничения доступа или правила обработки запроса; этот код сам по себе не означает неверный ключ.",

@@ -96,7 +96,7 @@ export class Api {
     }
   }
 
-  settings() { return this.request('/settings'); }
+  settings(provider = null) { return this.request('/settings' + (provider ? `?provider=${encodeURIComponent(provider)}` : '')); }
   models(provider) { return this.request(`/models?provider=${encodeURIComponent(provider)}`); }
   saveSettings(settings) { return this.post('/settings', settings); }
   testSettings() { return this.post('/settings/test', {}); }

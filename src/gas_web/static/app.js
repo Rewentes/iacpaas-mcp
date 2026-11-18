@@ -1,11 +1,11 @@
-import {Api, createSubmission} from './api.js';
-import {renderMarkdown} from './markdown.js';
-import {pickStarters} from './starter_questions.js';
-import {initPlatformSettings} from './platform_settings.js';
-import {initSettings} from './settings.js';
-import {initConversationRename} from './conversation_titles.js';
-import {initConversationMenu} from './conversation_menu.js';
-import {initRingUI, enhanceButton} from './ring.js';
+import {Api, createSubmission} from './api.js?v=ec6cedbd6442';
+import {renderMarkdown} from './markdown.js?v=d938b129b24e';
+import {pickStarters} from './starter_questions.js?v=7a2d3878f09c';
+import {initPlatformSettings} from './platform_settings.js?v=f62a1214a7a7';
+import {initSettings} from './settings.js?v=f79aea7e3873';
+import {initConversationRename} from './conversation_titles.js?v=9ea551f91c7d';
+import {initConversationMenu} from './conversation_menu.js?v=1ef5cd65d757';
+import {initRingUI, enhanceButton} from './ring.js?v=508ec23bc09f';
 
 initRingUI();
 
