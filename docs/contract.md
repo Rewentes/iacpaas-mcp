@@ -1,64 +1,66 @@
-# Контракт инструментов
+# Контракт MCP-инструментов
 
-Формальный снимок `tools/list` для mock сохранён в [tool-schemas.json](tool-schemas.json), для IACPaaS — в [tool-schemas-iacpaas.json](tool-schemas-iacpaas.json). Они относятся к `mcp==1.30.0`, а не к REST API платформы. Read-only backend `iacpaas` использует те же читающие инструменты и дополнительно предоставляет `get_gas_specification(path, concept_id)` для нормативного состава газа. Подробности: [интеграция](iacpaas-integration.md).
+Оба транспорта используют один контракт. Снимки `tools/list`: [mock](tool-schemas.json), [IACPaaS](tool-schemas-iacpaas.json). Это схемы MCP на SDK, закреплённом в `pyproject.toml`, а не REST API платформы. Их соответствие текущему серверу проверяется автоматически.
 
-| Инструмент | Основные аргументы | Результат data |
+| Инструмент | Аргументы | Основное содержимое `data` |
 |---|---|---|
-| list_inforesources | filter, limit | resources, scope, complete, warnings |
-| get_inforesource | path | path, name, format, node_count, edge_count |
-| get_subgraph | path, root=root, depth=2, max_nodes=2000 | nodes, edges, root, depth, scope, complete |
-| count_graph | path, root?, depth? | vertices, edges, external_edge_count, scope |
-| query_graph | path, field=name, value, limit | nodes, total_matches, scope, complete |
-| validate_resource | payload | valid, format, node_count, edge_count |
-| export_inforesource | path | сам normalized-demo-v1 документ |
-| update_concept | path, concept_id, mark?, comment? | concept и область volatile_mock_write |
-| import_inforesource | payload, clear_if_exists=false | path, replaced и область volatile_mock_write |
+| `list_inforesources` | `filter`, `limit` | `resources`, `scope`, `complete`, `warnings` |
+| `get_inforesource` | `path` | Имя, формат, количества вершин и дуг, происхождение |
+| `get_subgraph` | `path`, `root=root`, `depth=2`, `max_nodes=2000` | `nodes`, `edges`, область и полнота |
+| `count_graph` | `path`, `root?`, `depth?` | `vertices`, `edges`, `external_edge_count`, `scope` |
+| `query_graph` | `path`, `field=name`, `value`, `limit`, `match_mode=auto` | `nodes`, `total_matches`, `query`, полнота |
+| `validate_resource` | `payload` | Результат проверки нормализованной структуры и количества |
+| `export_inforesource` | `path` | Сам документ `normalized-demo-v1` или `normalized-iacpaas-v1` |
+| `get_gas_specification` | `path`, `concept_id` | Газ, стандарт, нормативные `facts`, полнота и происхождение; только IACPaaS |
+| `update_concept` | `path`, `concept_id`, `mark?`, `comment?` | Изменённый концепт; только разрешённый mock |
+| `import_inforesource` | `payload`, `clear_if_exists=false` | Путь и признак замены; только разрешённый mock |
 
-Последние два инструмента изменяют только память mock-процесса. Для них необходима серверная политика; annotations не заменяют её. Вызов import для существующего пути без явного clear_if_exists не заменяет ресурс.
+Сервер mock публикует 9 инструментов, IACPaaS — 10. Изменяющие инструменты остаются в схеме IACPaaS для общего контракта, но их вызов всегда отклоняется. Аннотации инструментов не заменяют проверку доступа.
 
-## Успешный результат
+## Результаты и ошибки
 
-MCP `structuredContent` содержит envelope:
+Успех возвращается в `structuredContent`:
 
 ```json
 {
   "ok": true,
-  "data": {
-    "path": "/demo/university",
-    "vertices": 5,
-    "edges": 6,
-    "complete": true,
-    "scope": "local_resource"
-  },
-  "backend": "mock",
-  "complete": true,
+  "data": {"resources": [], "complete": false, "scope": "configured_iacpaas_catalog"},
+  "backend": "iacpaas",
+  "complete": false,
   "warnings": []
 }
 ```
 
-Это сокращённый пример формы; полные фактические ответы есть в [examples/transport-smoke.json](examples/transport-smoke.json). Внутренние данные data различаются по операции. Выходная Pydantic-схема типизирует envelope; структура графа дополнительно проверяется доменной моделью.
+Это сокращённый пример формы, а не фактический каталог. `backend` имеет значение `mock` или `iacpaas`; реальные графовые результаты содержат `mock=false` и `source`. Значения `complete`, `scope`, `warnings` описывают конкретную операцию. Каталог отражает настроенные пути и не доказывает доступность каждого ресурса до чтения.
 
-## Ошибка
-
-Ошибки исполнения приходят с MCP `isError=true`. Первый текстовый блок содержит JSON, например:
+Ошибка исполнения — `CallToolResult(isError=true)` с JSON-текстом без успешного `structuredContent`:
 
 ```json
-{"code":"not_found","message":"Ресурс не найден: /missing/resource","retryable":false}
+{"code":"not_found","message":"Ресурс не найден","retryable":false}
 ```
 
-Основные коды: not_found, invalid_data, limit_exceeded, permission_denied, timeout, platform_error, platform_unavailable, authentication_error. При ненастроенном реальном источнике запуск завершается `configuration_error`, без переключения на mock. Не следует принимать пустую выдачу настроенного каталога за отсутствие ресурса во всём фонде платформы. Envelope содержит `backend=mock|iacpaas`; реальный экспорт имеет `mock=false`, `format=normalized-iacpaas-v1` и `source`.
+Коды включают `invalid_data`, `limit_exceeded`, `not_found`, `permission_denied`, `authentication_error`, `timeout`, `platform_unavailable`, `platform_error`. Ошибки конфигурации и неизвестного backend могут остановить запуск до MCP-сессии. Ошибки реальной IACPaaS не включают mock и не означают отсутствия данных во всём фонде.
 
-## Текущие ограничения
+## Лимиты разных слоёв
 
-- Глубина: 0..5; max_nodes: 1..2000.
-- Публичный limit списка/поиска: 1..100 (доменные функции допускают больше, но MCP-контракт уже).
-- Ограничение аргументов и сериализованного ответа: по 1 МиБ по умолчанию. Это не предел скачивания из платформы: внешнего HTTP-backend пока нет.
-- JSON графа: до 2000 вершин и 10000 экземпляров дуг.
-- Агент: до 12 попыток инструментов на запрос.
-- Лимиты — настройки проекта, не ограничения IACPaaS.
+| Слой | Ограничение |
+|---|---|
+| MCP-аргументы и успешный envelope | По 1 MiB сериализованного JSON по умолчанию; это не весь JSON-RPC frame |
+| Публичный список/поиск | `limit=1..100` |
+| Подграф | `depth=0..5`, `max_nodes=1..2000` |
+| Путь/идентификатор | До 1024 символов |
+| Текстовый фильтр/изменение | До 4096 символов |
+| HTTP-экспорт из IACPaaS | По умолчанию 16 MiB; `IACPAAS_EXPORT_BYTES` от 1 KiB до 64 MiB |
+| Mock-граф | До 2000 вершин и 10000 экземпляров дуг |
+| Реальный нормализованный граф | До 50000 вершин, 200000 вхождений, глубина universal до 128 |
+| Собственный агент | Общий бюджет до 12 MCP-вызовов на запрос, включая раунды исправления |
 
-При ограничении выдачи смотрите complete/warnings/scope. В count_graph без root/depth учитываются все локальные вершины, включая недостижимую от root. Внешняя цель не считается локальной вершиной; её дуга считается. Повторные дуги не сливаются.
+Лимит экспорта платформы отличается от лимита ответа инструмента: MCP может загрузить полный ресурс, но вернуть только небольшой подграф. Превышение бюджета чтения возвращает `limit_exceeded`. Лимиты проекта не являются заявленными пределами платформы IACPaaS.
 
-## Предупреждение о записи
+В `auto` поиск по `id`/`metatype` точный, по остальным полям — подстрочный; `exact` и `contains` задают режим явно. `total_matches` относится к этому запросу, `complete=false` обозначает усечённую выдачу. Семантика обхода и дуг описана в [платформенном слое](platform.md).
 
-Перед изменением сервер проверяет, что ограниченное подтверждение результата помещается в бюджет. Обычная небольшая запись возвращает полный результат. Если после успешного изменения полный ответ слишком велик, сервер возвращает `ok=true`, `data={"applied":true,"result_omitted":true}`, `complete=false` и предупреждения; аудит отмечает success. Это неполная выдача результата, а не неуспешное изменение. Если даже ограниченное подтверждение не помещается, операция отклоняется до мутации. Для чтения превышение бюджета остаётся limit_exceeded. Любые сетевые таймауты будущего реального backend всё равно требуют проверки состояния без слепого повтора.
+## Запись в mock
+
+Импорт принимает только `normalized-demo-v1`. Существующий путь заменяется лишь при явном `clear_if_exists=true`. Перед мутацией сервер резервирует место для подтверждения. Если полное успешное подтверждение не помещается, возвращается `ok=true`, `data={"applied":true,"result_omitted":true}`, `complete=false`: изменение уже выполнено. Если не помещается и ограниченное подтверждение, операция отклоняется до записи.
+
+Изменения существуют только в памяти mock. Прямые изменения реальных ресурсов не поддерживаются. Подробности политики: [сервер](server.md); проверка контракта и границы приёмки: [verification.md](verification.md).
